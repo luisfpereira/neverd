@@ -1,0 +1,17 @@
+*.pyc
+*.pvsm
+*.pdf
+*.h5
+!/tests/**/*.h5
+*.xmf
+#.swp
+*.idea*
+.coverage
+.eggs
+build
+dist
+tk_2d_dialog.egg*
+.DS_Store
+_build
+docs/source/api/_generated
+*.ipynb_checkpoints
