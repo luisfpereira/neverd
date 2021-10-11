@@ -115,12 +115,8 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
         pass
 
     def _config_bindings(self):
-        self.canvas.tag_bind(self.id, '<Button-1>',
-                             self.on_config_delta_mov)
-        self.canvas.tag_bind(self.id, '<B1-Motion>',
-                             self.on_translate)
-        self.canvas.tag_bind(self.id, '<ButtonRelease-1>',
-                             self.on_update_coords)
+        self.canvas.tag_bind(self.id, '<Button-1>', self.on_config_delta_mov)
+        self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_translate)
 
         self.canvas.tag_bind(self.id, '<Button-2>')
 
@@ -134,10 +130,6 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
     def on_translate(self, event):
         x, y = event.x - self._delta[0], event.y - self._delta[1]
         self.canvas.moveto(self.id, x, y)
-
-    @abstractmethod
-    def on_update_coords(self, *args):
-        pass
 
     def on_config_delta_mov(self, event):
         x, y = self._get_ref_point()
@@ -196,21 +188,25 @@ class Point(_BaseObject):
 
     def __init__(self, name, coords, color='blue', size=5, text='', show=True):
         super().__init__(name, text, show)
-        self.coords = coords
+        self._init_coords = coords
         self.color = color
         self.size = size
 
+    @property
+    def coords(self):
+        return self.canvas.map2real(self._get_center())
+
     def _get_ref_point(self):
-        x, y = self.canvas.map2canvas(self.coords)
-        return x - self.size, y - self.size
+        x, y, *_ = self.canvas.coords(self.id)
+        return x, y
 
     def _get_center(self):
         x, y, *_ = self.canvas.coords(self.id)
         return x + self.size, y + self.size
 
-    def _get_rect_corners(self):
+    def _get_init_rect_corners(self):
         # in canvas coordinates
-        x, y = self.canvas.map2canvas(self.coords)
+        x, y = self.canvas.map2canvas(self._init_coords)
         r = self.size
         x0, y0 = x - r, y - r
         x1, y1 = x + r, y + r
@@ -218,16 +214,12 @@ class Point(_BaseObject):
         return (x0, y0), (x1, y1)
 
     def create_widget(self):
-        (x0, y0), (x1, y1) = self._get_rect_corners()
+        (x0, y0), (x1, y1) = self._get_init_rect_corners()
 
         self.id = self.canvas.create_oval(
             x0, y0, x1, y1, fill=self.color, outline="")
 
         return self.id
-
-    def on_update_coords(self, *args):
-        x0, y0, *_ = self.canvas.coords(self.id)
-        self.coords = self.canvas.map2real((x0 + self.size, y0 + self.size))
 
     def translate_to(self, x_center, y_center):
         x, y = x_center - self.size, y_center - self.size
@@ -258,15 +250,18 @@ class LinePoint(Point):
 
 class Line(_BaseObject):
     # TODO: hide points in popup menu
-    # TODO: add base widget with points (this is generic)
 
-    def __init__(self, name, points, width=1, size=5, color='red',
-                 text='', show=True):
+    def __init__(self, name, coords, width=1, size=5, color='red', text='',
+                 show=True):
         super().__init__(name, text, show)
-        self.points = [LinePoint(self, coords, color=color, size=size, show=show)
-                       for coords in points]
+        self.points = [LinePoint(self, coords_, color=color, size=size, show=show)
+                       for coords_ in coords]
         self.color = color
         self.width = width
+
+    @property
+    def coords(self):
+        return tuple([point.coords for point in self.points])
 
     def _get_ref_point(self):
         coords = self.canvas.coords(self.id)
@@ -278,12 +273,11 @@ class Line(_BaseObject):
     def create_widget(self):
 
         # create line
-        coords = [self.canvas.map2canvas(point.coords) for point in self.points]
-
+        coords = [self.canvas.map2canvas(point._init_coords) for point in self.points]
         self.id = self.canvas.create_line(
             flatten_list(coords), fill=self.color, width=self.width)
 
-        # create points
+        # create points (order matters for bindings)
         for point in self.points:
             point.create_widget()
 
@@ -310,10 +304,6 @@ class Line(_BaseObject):
         coords = self.canvas.coords(self.id)
         for point, c1, c2 in zip(self.points, coords[::2], coords[1::2]):
             point.translate_to(c1, c2)
-
-    def on_update_coords(self, *args):
-        for point in self.points:
-            point.on_update_coords()
 
 
 class Slider(_BaseObject):
