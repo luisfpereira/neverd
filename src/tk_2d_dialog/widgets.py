@@ -113,7 +113,9 @@ class ObjectPopupMenu(_BasePopupMenu):
 
     def _config_bindings(self):
         self.add_command(label='Show/hide', command=self.on_show_hide)
-        self.add_command(label='Delete', command=self.on_delete)
+
+        if self.object.allow_deletion:
+            self.add_command(label='Delete', command=self.on_delete)
 
     def on_show_hide(self, *argss):
         if self.object._show:
@@ -123,8 +125,6 @@ class ObjectPopupMenu(_BasePopupMenu):
 
     def on_delete(self, *args):
         self.object.canvas.delete_object(self.object.id)
-
-        # TODO: reactivate canvas popup
         self.object.canvas.popup_menu._bind_right_click()
 
 

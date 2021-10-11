@@ -1,7 +1,7 @@
 from abc import ABCMeta
-from abc import abstractmethod
-
 import tkinter as tk
+
+import numpy as np
 
 from tk_2d_dialog.widgets import CanvasPopupMenu
 from tk_2d_dialog.widgets import ObjectPopupMenu
@@ -106,19 +106,21 @@ class _NoneWidget(_BaseWidget):
 
 class _BaseObject(_BaseWidget, metaclass=ABCMeta):
 
-    def __init__(self, name, text, show):
+    def __init__(self, name, text, show, allow_translation=True,
+                 allow_deletion=True):
         super().__init__(show)
         self.name = name
         self.text = text
+        self.allow_translation = allow_translation
+        self.allow_deletion = allow_deletion
 
     def show_text(self):
         pass
 
     def _config_bindings(self):
-        self.canvas.tag_bind(self.id, '<Button-1>', self.on_config_delta_mov)
-        self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_translate)
-
-        self.canvas.tag_bind(self.id, '<Button-2>')
+        if self.allow_translation:
+            self.canvas.tag_bind(self.id, '<Button-1>', self.on_config_delta_mov)
+            self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_translate)
 
         self.canvas.tag_bind(self.id, '<Enter>', self.on_enter)
         self.canvas.tag_bind(self.id, '<Leave>', self.on_leave)
@@ -128,16 +130,15 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
         self._create_popup_menu()
 
     def on_translate(self, event):
-        x, y = event.x - self._delta[0], event.y - self._delta[1]
-        self.canvas.moveto(self.id, x, y)
+        self.canvas_coords = self._click_coords + self._get_delta_mov(event)
 
     def on_config_delta_mov(self, event):
-        x, y = self._get_ref_point()
-        self._delta = (event.x - x, event.y - y)
+        self._click_mouse_coords = event.x, event.y
+        self._click_coords = self.canvas_coords
 
-    @abstractmethod
-    def _get_ref_point(self):
-        pass
+    def _get_delta_mov(self, event):
+        return np.array((event.x - self._click_mouse_coords[0],
+                         event.y - self._click_mouse_coords[1]))
 
     def destroy(self):
         self.popup_menu.destroy()
@@ -154,6 +155,7 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
 
 
 class CalibrationPoint:
+    # TODO: abstract to Point
 
     def __init__(self, canvas, real):
         self.canvas = canvas
@@ -186,23 +188,30 @@ class Image(_BaseWidget):
 
 class Point(_BaseObject):
 
-    def __init__(self, name, coords, color='blue', size=5, text='', show=True):
-        super().__init__(name, text, show)
+    def __init__(self, name, coords, color='blue', size=5, text='', show=True,
+                 allow_translation=True, allow_deletion=True):
+        super().__init__(name, text, show, allow_translation=allow_translation,
+                         allow_deletion=allow_deletion)
         self._init_coords = coords
         self.color = color
         self.size = size
 
+    def __sub__(self, other):
+        return self.canvas_coords - other.canvas_coords
+
     @property
     def coords(self):
-        return self.canvas.map2real(self._get_center())
+        return np.array(self.canvas.map2real(self.canvas_coords))
 
-    def _get_ref_point(self):
+    @property
+    def canvas_coords(self):
         x, y, *_ = self.canvas.coords(self.id)
-        return x, y
+        return np.array([x + self.size, y + self.size])
 
-    def _get_center(self):
-        x, y, *_ = self.canvas.coords(self.id)
-        return x + self.size, y + self.size
+    @canvas_coords.setter
+    def canvas_coords(self, center_coords):
+        x, y = center_coords[0] - self.size, center_coords[1] - self.size
+        self.canvas.moveto(self.id, x, y)
 
     def _get_init_rect_corners(self):
         # in canvas coordinates
@@ -221,17 +230,15 @@ class Point(_BaseObject):
 
         return self.id
 
-    def translate_to(self, x_center, y_center):
-        x, y = x_center - self.size, y_center - self.size
-        self.canvas.moveto(self.id, x, y)
-
 
 class LinePoint(Point):
     # TODO: delete should not be allowed
 
-    def __init__(self, line, coords, color='blue', size=5, show=True):
-        super().__init__(show, coords, color=color, size=size, text='',
-                         show=show)
+    def __init__(self, line, coords, color='blue', size=5, show=True,
+                 allow_translation=True):
+        super().__init__(None, coords, color=color, size=size, text='',
+                         show=show, allow_translation=allow_translation,
+                         allow_deletion=False)
         self.line = line
 
     @property
@@ -242,33 +249,84 @@ class LinePoint(Point):
     def canvas(self, *args):
         pass
 
-    def on_translate(self, event):
-        super().on_translate(event)
-        new_coords = [point._get_center() for point in self.line.points]
-        self.canvas.coords(self.line.id, flatten_list(new_coords))
+    @Point.canvas_coords.setter
+    def canvas_coords(self, center_coords):
+        super(LinePoint, type(self)).canvas_coords.fset(self, center_coords)
+        self.line.update()
 
 
-class Line(_BaseObject):
+class MasterSliderPoint(LinePoint):
+
+    def __init__(self, slider, coords, color='blue', size=5, show=True,
+                 allow_translation=True):
+        super().__init__(slider, coords, color=color, size=size, show=show,
+                         allow_translation=allow_translation)
+
+        # correct coords
+        self._init_coords = self.line.anchor.find_closest_point(
+            coords, canvas=False)
+
+    @LinePoint.canvas_coords.setter
+    def canvas_coords(self, center_coords):
+        center_coords_ = self.line.anchor.find_closest_point(center_coords, canvas=True)
+        super(MasterSliderPoint, type(self)).canvas_coords.fset(self, center_coords_)
+
+
+class SliderPoint(LinePoint):
+
+    def __init__(self, slider, v, color='blue', size=5, show=True):
+        super().__init__(slider, None, color=color, size=size, show=show,
+                         allow_translation=False)
+        self.v = v
+
+        # correct coords
+        self._init_coords = self._get_init_coords()
+
+    def _get_init_coords(self):
+        pt1, pt2 = self.line.masters
+        vec = pt2._init_coords - pt1._init_coords
+        pt = pt1._init_coords + vec * self.v
+
+        return self.line.anchor.find_closest_point(pt, canvas=False)
+
+    @property
+    def canvas_coords(self):
+        dir_vec = self.line._get_direc()
+        pt = self.line.masters[0].canvas_coords + self.v * dir_vec
+
+        return self.line.anchor.find_closest_point(pt)
+
+    @canvas_coords.setter
+    def canvas_coords(self, center_coords):
+        center_coords_ = self.line.anchor.find_closest_point(center_coords, canvas=True)
+        super(LinePoint, type(self)).canvas_coords.fset(self, center_coords_)
+
+
+class _AbstractLine(_BaseObject):
     # TODO: hide points in popup menu
 
-    def __init__(self, name, coords, width=1, size=5, color='red', text='',
-                 show=True):
-        super().__init__(name, text, show)
-        self.points = [LinePoint(self, coords_, color=color, size=size, show=show)
-                       for coords_ in coords]
+    def __init__(self, name, points, width=1, size=5, color='red', text='',
+                 show=True, allow_translation=True, allow_deletion=True):
+        super().__init__(name, text, show, allow_translation=allow_translation,
+                         allow_deletion=allow_deletion)
+        self.points = points
         self.color = color
         self.width = width
+        self.sliders = []
 
     @property
     def coords(self):
-        return tuple([point.coords for point in self.points])
+        return np.array([point.coords for point in self.points])
 
-    def _get_ref_point(self):
+    @property
+    def canvas_coords(self):
         coords = self.canvas.coords(self.id)
-        x = min(c for c in coords[::2])
-        y = min(c for c in coords[1::2])
+        return np.array([(c1, c2) for c1, c2 in zip(coords[::2], coords[1::2])])
 
-        return x - self.width, y - self.width
+    @canvas_coords.setter
+    def canvas_coords(self, new_coords):
+        for point, new_coords_ in zip(self.points, new_coords):
+            point.canvas_coords = new_coords_
 
     def create_widget(self):
 
@@ -298,26 +356,91 @@ class Line(_BaseObject):
         for point in self.points:
             point.destroy()
 
-    def on_translate(self, event):
-        super().on_translate(event)
+    def find_closest_point(self, coords, canvas=True):
+        line_coords = np.array(self.canvas_coords) if canvas else np.array(self.coords)
 
-        coords = self.canvas.coords(self.id)
-        for point, c1, c2 in zip(self.points, coords[::2], coords[1::2]):
-            point.translate_to(c1, c2)
+        pt = np.array(coords)
+        dist = np.linalg.norm(line_coords - pt, axis=1)
+
+        closest_idx = np.argmin(dist)
+        n_pts = line_coords.shape[0]
+
+        closest_pt = line_coords[closest_idx, :]
+
+        pt_left = line_coords[closest_idx - 1, :] if closest_idx > 0 else np.nan
+        pt_right = line_coords[closest_idx + 1, :] if closest_idx < n_pts - 1 else np.nan
+
+        direcs = [pt_left - closest_pt, pt_right - closest_pt]
+        direcs = [direc / np.linalg.norm(direc) for direc in direcs]
+        vec = pt - closest_pt
+
+        par_projs = []
+        for direc in direcs:
+            scalar = np.dot(vec, direc)
+            if scalar > 0:
+                par_projs.append(scalar * direc)
+            else:
+                par_projs.append(np.inf)
+        perp_projs = [vec - par_proj for par_proj in par_projs]
+
+        par_projs.append(np.zeros(2))
+        perp_projs.append(vec)
+
+        closest_idx = np.argmin(np.linalg.norm(perp_projs, axis=1))
+
+        par_proj = par_projs[closest_idx]
+        if canvas:  # in pixel there's no floats
+            par_proj = np.array([int(c) for c in par_proj])
+
+        return closest_pt + par_proj
+
+    def update(self):
+        new_coords = [point.canvas_coords for point in self.points]
+        self.canvas.coords(self.id, flatten_list(new_coords))
+
+        return new_coords
 
 
-class Slider(_BaseObject):
-    # TODO: shared behavior with line?
+class Line(_AbstractLine):
 
-    def __init__(self, name, text, anchor, pt_init, pt_end, n_points, width=3,
-                 color='green', show=True):
-        super().__init__(name, text, show)
+    def __init__(self, name, coords, width=1, size=5, color='red', text='',
+                 show=True, allow_translation=True, allow_deletion=True):
+        points = [LinePoint(self, coords_, color=color, size=size, show=show,
+                            allow_translation=allow_translation)
+                  for coords_ in coords]
+        super().__init__(name, points, width=width, size=size, color=color,
+                         text=text, show=show,
+                         allow_translation=allow_translation,
+                         allow_deletion=allow_deletion)
+
+
+class Slider(_AbstractLine):
+
+    def __init__(self, name, anchor, pt_init, pt_end, n_points, width=3,
+                 size=5, color='green', text='', show=True, allow_deletion=True):
+        # TODO: think about best way to pass slider coordinates
         self.anchor = anchor
-        self.pt_init = pt_init
-        self.pt_end = pt_end
-        self.n_points = n_points
-        self.width = width
-        self.color = color
+        self.masters = [MasterSliderPoint(self, pt_init, color=color, size=size,
+                                          show=show),
+                        MasterSliderPoint(self, pt_end, color=color, size=size,
+                                          show=show)]
 
-    def _get_ref_point(self):
-        return self.canvas.map2canvas(self.pt_init)
+        points = [self.masters[0]]
+        for i in range(n_points - 2):
+            points.append(SliderPoint(self, (i + 1) / (n_points - 1), color=color,
+                                      size=size - 1, show=show))
+        points.append(self.masters[1])
+
+        super().__init__(name, points, width=width, size=size, color=color,
+                         text=text, show=show, allow_deletion=allow_deletion,
+                         allow_translation=False)
+
+    def _get_direc(self):
+        return self.masters[1] - self.masters[0]
+
+    def update(self):
+        new_coords = super().update()
+
+        # also update sliders
+        for point, new_coords_ in zip(self.points[1:-1], new_coords[1:-1]):
+            point.canvas_coords = new_coords_
