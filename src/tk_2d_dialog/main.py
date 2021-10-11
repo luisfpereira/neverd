@@ -21,12 +21,13 @@ def main(filename):
     calibration = Calibration(cal_pt1, cal_pt2)
 
     canvas = Canvas(holder, calibration, width=width, height=height)
+    canvas.pack()
 
     # objects
     point = Point('point1', (0.0, 0.0), show=True)
     canvas.add_object(point)
 
-    line = Line('line1', ((-10., -5), (0., -5), (10., -5.)))
+    line = Line('line1', ((-10., -5), (0., -5), (10., 5.)), width=1)
     canvas.add_object(line)
 
     tk.mainloop()

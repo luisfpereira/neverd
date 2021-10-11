@@ -30,7 +30,7 @@ class CanvasPopupMenu(_BasePopupMenu):
 
     def __init__(self, canvas):
         self.canvas = canvas
-        super().__init__(self.canvas.drawing_canvas,
+        super().__init__(self.canvas,
                          tearoff=0)
 
     def _bind_right_click(self):
@@ -40,14 +40,14 @@ class CanvasPopupMenu(_BasePopupMenu):
             Trick to bind canvas again when object is deleted with a popup menu,
             without triggering it instantaneously.
         """
-        self.canvas.drawing_canvas.bind('<Button-2>', self.on_right_click)
+        self.canvas.bind('<Button-2>', self.on_right_click)
 
     def on_right_click(self, event=None):
         if self._binded is True:
             super().bind_menu_trigger()
-            self.canvas.drawing_canvas.event_generate('<Button-2>',
-                                                      rootx=event.x_root,
-                                                      rooty=event.y_root)
+            self.canvas.event_generate('<Button-2>',
+                                       rootx=event.x_root,
+                                       rooty=event.y_root)
         self._binded = True
 
     def unbind_menu_trigger(self):
@@ -101,15 +101,15 @@ class ObjectPopupMenu(_BasePopupMenu):
 
     def __init__(self, obj):
         self.object = obj
-        super().__init__(self.object.canvas.drawing_canvas,
+        super().__init__(self.object.canvas,
                          tearoff=0)
 
     def unbind_menu_trigger(self):
-        self.object.canvas.drawing_canvas.tag_bind(self.object.id, '<Button-2>')
+        self.object.canvas.tag_bind(self.object.id, '<Button-2>')
 
     def bind_menu_trigger(self):
-        self.object.canvas.drawing_canvas.tag_bind(self.object.id, '<Button-2>',
-                                                   self.on_popup_menu_trigger)
+        self.object.canvas.tag_bind(self.object.id, '<Button-2>',
+                                    self.on_popup_menu_trigger)
 
     def _config_bindings(self):
         self.add_command(label='Show/hide', command=self.on_show_hide)

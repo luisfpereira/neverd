@@ -8,17 +8,14 @@ from tk_2d_dialog.widgets import ObjectPopupMenu
 from tk_2d_dialog.utils import flatten_list
 
 
-class Canvas:
+class Canvas(tk.Canvas):
 
     def __init__(self, holder, calibration, image=None, width=800,
                  height=800, **canvas_kwargs):
         # TODO: inherit from tk?
-        self.holder = holder
+        super().__init__(holder, width=width, height=height, **canvas_kwargs)
         self.calibration = calibration
         self.image = image or _NoneWidget(show=True)
-        self.width = width
-        self.height = height
-        self.drawing_canvas = self._create_drawing_canvas(**canvas_kwargs)
         self.objects = {}
         self.popup_menu = CanvasPopupMenu(self)
 
@@ -27,12 +24,6 @@ class Canvas:
         self.image.update_canvas(self)
 
         # TODO: create calibration and image widgets
-
-    def _create_drawing_canvas(self, **canvas_kwargs):
-        drawing_canvas = tk.Canvas(self.holder, width=self.width,
-                                   height=self.height, **canvas_kwargs)
-        drawing_canvas.pack()
-        return drawing_canvas
 
     def map2real(self, coords):
         canvas_diff, real_diff = self.calibration.pt_bottom_right - self.calibration.pt_top_left
@@ -95,13 +86,14 @@ class _BaseWidget(metaclass=ABCMeta):
 
     def hide(self):
         self._show = False
-        self.canvas.drawing_canvas.itemconfigure(self.id, state='hidden')
+        self.canvas.itemconfigure(self.id, state='hidden')
 
     def show(self):
         self._show = True
-        self.canvas.drawing_canvas.itemconfigure(self.id, state='normal')
+        self.canvas.itemconfigure(self.id, state='normal')
 
     def update_canvas(self, canvas):
+        # TODO: update or set
         self.canvas = canvas
 
     def create_widget(self):
@@ -123,17 +115,17 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
         pass
 
     def _config_bindings(self):
-        self.canvas.drawing_canvas.tag_bind(self.id, '<Button-1>',
-                                            self.on_config_delta_mov)
-        self.canvas.drawing_canvas.tag_bind(self.id, '<B1-Motion>',
-                                            self.on_translate)
-        self.canvas.drawing_canvas.tag_bind(self.id, '<ButtonRelease-1>',
-                                            self.on_update_coords)
+        self.canvas.tag_bind(self.id, '<Button-1>',
+                             self.on_config_delta_mov)
+        self.canvas.tag_bind(self.id, '<B1-Motion>',
+                             self.on_translate)
+        self.canvas.tag_bind(self.id, '<ButtonRelease-1>',
+                             self.on_update_coords)
 
-        self.canvas.drawing_canvas.tag_bind(self.id, '<Button-2>')
+        self.canvas.tag_bind(self.id, '<Button-2>')
 
-        self.canvas.drawing_canvas.tag_bind(self.id, '<Enter>', self.on_enter)
-        self.canvas.drawing_canvas.tag_bind(self.id, '<Leave>', self.on_leave)
+        self.canvas.tag_bind(self.id, '<Enter>', self.on_enter)
+        self.canvas.tag_bind(self.id, '<Leave>', self.on_leave)
 
     def _on_widget_creation(self):
         self._config_bindings()
@@ -141,7 +133,7 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
 
     def on_translate(self, event):
         x, y = event.x - self._delta[0], event.y - self._delta[1]
-        self.canvas.drawing_canvas.moveto(self.id, x, y)
+        self.canvas.moveto(self.id, x, y)
 
     @abstractmethod
     def on_update_coords(self, *args):
@@ -157,7 +149,7 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
 
     def destroy(self):
         self.popup_menu.destroy()
-        self.canvas.drawing_canvas.delete(self.id)
+        self.canvas.delete(self.id)
 
     def _create_popup_menu(self):
         self.popup_menu = ObjectPopupMenu(self)
@@ -212,8 +204,8 @@ class Point(_BaseObject):
         x, y = self.canvas.map2canvas(self.coords)
         return x - self.size, y - self.size
 
-    def _get_center_from_canvas(self):
-        x, y, *_ = self.canvas.drawing_canvas.coords(self.id)
+    def _get_center(self):
+        x, y, *_ = self.canvas.coords(self.id)
         return x + self.size, y + self.size
 
     def _get_rect_corners(self):
@@ -228,18 +220,18 @@ class Point(_BaseObject):
     def create_widget(self):
         (x0, y0), (x1, y1) = self._get_rect_corners()
 
-        self.id = self.canvas.drawing_canvas.create_oval(
+        self.id = self.canvas.create_oval(
             x0, y0, x1, y1, fill=self.color, outline="")
 
         return self.id
 
     def on_update_coords(self, *args):
-        x0, y0, *_ = self.canvas.drawing_canvas.coords(self.id)
+        x0, y0, *_ = self.canvas.coords(self.id)
         self.coords = self.canvas.map2real((x0 + self.size, y0 + self.size))
 
     def translate_to(self, x_center, y_center):
         x, y = x_center - self.size, y_center - self.size
-        self.canvas.drawing_canvas.moveto(self.id, x, y)
+        self.canvas.moveto(self.id, x, y)
 
 
 class LinePoint(Point):
@@ -260,12 +252,13 @@ class LinePoint(Point):
 
     def on_translate(self, event):
         super().on_translate(event)
-        new_coords = [point._get_center_from_canvas() for point in self.line.points]
-        self.canvas.drawing_canvas.coords(self.line.id, flatten_list(new_coords))
+        new_coords = [point._get_center() for point in self.line.points]
+        self.canvas.coords(self.line.id, flatten_list(new_coords))
 
 
 class Line(_BaseObject):
     # TODO: hide points in popup menu
+    # TODO: add base widget with points (this is generic)
 
     def __init__(self, name, points, width=1, size=5, color='red',
                  text='', show=True):
@@ -276,15 +269,18 @@ class Line(_BaseObject):
         self.width = width
 
     def _get_ref_point(self):
-        return self.canvas.map2canvas(self.points[0].coords)
-        # TODO: depends on the clicked segment
+        coords = self.canvas.coords(self.id)
+        x = min(c for c in coords[::2])
+        y = min(c for c in coords[1::2])
+
+        return x - self.width, y - self.width
 
     def create_widget(self):
 
         # create line
         coords = [self.canvas.map2canvas(point.coords) for point in self.points]
 
-        self.id = self.canvas.drawing_canvas.create_line(
+        self.id = self.canvas.create_line(
             flatten_list(coords), fill=self.color, width=self.width)
 
         # create points
@@ -310,7 +306,8 @@ class Line(_BaseObject):
 
     def on_translate(self, event):
         super().on_translate(event)
-        coords = self.canvas.drawing_canvas.coords(self.id)
+
+        coords = self.canvas.coords(self.id)
         for point, c1, c2 in zip(self.points, coords[::2], coords[1::2]):
             point.translate_to(c1, c2)
 
