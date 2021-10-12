@@ -6,6 +6,7 @@ from tk_2d_dialog.objects import CalibrationPoint
 from tk_2d_dialog.objects import Calibration
 from tk_2d_dialog.objects import Point
 from tk_2d_dialog.objects import Line
+from tk_2d_dialog.objects import Slider
 
 
 def main(filename):
@@ -27,7 +28,13 @@ def main(filename):
     point = Point('point1', (0.0, 0.0), show=True)
     canvas.add_object(point)
 
-    line = Line('line1', ((-10., -5), (0., -5), (10., 5.)), width=1)
+    pt1 = (-10., -5)
+    pt2 = (10., 5.)
+    line = Line('line1', (pt1, (0., -5), pt2), width=1)
+
     canvas.add_object(line)
+
+    slider = Slider('slider1', line, 0.1, 0.9, 4)
+    canvas.add_object(slider)
 
     tk.mainloop()

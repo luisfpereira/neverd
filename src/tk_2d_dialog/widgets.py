@@ -2,6 +2,8 @@ from abc import ABCMeta
 from abc import abstractmethod
 import tkinter as tk
 
+from tk_2d_dialog.forms import PointForm
+
 
 class _BasePopupMenu(tk.Menu, metaclass=ABCMeta):
 
@@ -69,6 +71,9 @@ class CanvasPopupMenu(_BasePopupMenu):
                          command=self.on_hide_all)
         self.add_command(label='Show objects properties',
                          command=self.on_show_objs_props)
+
+        add_popup_menu = AddPopupMenu(self.canvas, tearoff=0)
+        self.add_cascade(label='Add object', menu=add_popup_menu)
 
     def on_show_hide_cal(self, *args):
         if self.canvas.calibration._show:
@@ -142,6 +147,27 @@ class ObjectPopupMenu(_BasePopupMenu):
     def remove_triggerer(self, obj):
         self.triggerers.remove(obj)
         self._unbind_menu_trigger(obj)
+
+
+class AddPopupMenu(tk.Menu):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._config_bindings()
+
+    def _config_bindings(self):
+        self.add_command(label='Point', command=self.on_add_point)
+        self.add_command(label='Line', command=self.on_add_line)
+        self.add_command(label='Slider', command=self.on_add_slider)
+
+    def on_add_point(self):
+        PointForm()
+
+    def on_add_line(self):
+        pass
+
+    def on_add_slider(self):
+        pass
 
 
 class ObjectPropertiesFrame:
