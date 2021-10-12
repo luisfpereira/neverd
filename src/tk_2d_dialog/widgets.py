@@ -114,7 +114,7 @@ class ObjectPopupMenu(_BasePopupMenu):
     def _config_bindings(self):
         self.add_command(label='Show/hide', command=self.on_show_hide)
 
-        if self.object.allow_deletion:
+        if self.object.allow_delete:
             self.add_command(label='Delete', command=self.on_delete)
 
     def on_show_hide(self, *argss):
