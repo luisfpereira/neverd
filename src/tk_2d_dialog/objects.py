@@ -282,7 +282,7 @@ class MasterSliderPoint(LinePoint):
         self.canvas_coords = self.line.anchor.get_coords_by_v(self.v)
 
 
-class SliderPoint(LinePoint):
+class SlaveSliderPoint(LinePoint):
 
     def __init__(self, slider, t, color='blue', size=5, show=True):
         super().__init__(slider, None, color=color, size=size, show=show,
@@ -294,7 +294,7 @@ class SliderPoint(LinePoint):
 
     @property
     def v(self):
-        return self.line.masters[0].v + self.t * (self.line.masters[1].v - self.line.masters[0].v)
+        return self.line.master_pts[0].v + self.t * (self.line.master_pts[1].v - self.line.master_pts[0].v)
 
     @property
     def canvas_coords(self):
@@ -302,8 +302,10 @@ class SliderPoint(LinePoint):
 
     @canvas_coords.setter
     def canvas_coords(self, center_coords):
-        center_coords_ = self.line.anchor.find_closest_point(center_coords)
-        super(LinePoint, type(self)).canvas_coords.fset(self, center_coords_)
+        if not np.allclose(center_coords, self.canvas_coords):
+            raise Exception('Invalid center coords.')
+
+        super(LinePoint, type(self)).canvas_coords.fset(self, center_coords)
 
 
 class _AbstractLine(_BaseObject):
@@ -349,11 +351,16 @@ class _AbstractLine(_BaseObject):
         for point in self.points:
             point.show()
 
+        for slider in self.sliders:
+            slider.show()
+
     def hide(self):
-        # TODO: hide also sliders?
         super().hide()
         for point in self.points:
             point.hide()
+
+        for slider in self.sliders:
+            slider.hide()
 
     def destroy(self):
         super().destroy()
@@ -364,7 +371,11 @@ class _AbstractLine(_BaseObject):
             slider.destroy()
 
     def find_closest_point(self, coords):
-        line_coords = np.array(self.canvas_coords)
+        # check first if already in line
+        if self._which_segment(coords) is not None:
+            return coords
+
+        line_coords = self.canvas_coords
 
         pt = np.array(coords)
         dist = np.linalg.norm(line_coords - pt, axis=1)
@@ -395,9 +406,7 @@ class _AbstractLine(_BaseObject):
 
         closest_idx = np.argmin(np.linalg.norm(perp_projs, axis=1))
 
-        par_proj = par_projs[closest_idx]
-
-        return closest_pt + par_proj
+        return closest_pt + par_projs[closest_idx]
 
     def update(self):
         new_coords = [point.canvas_coords for point in self.points]
@@ -420,6 +429,7 @@ class _AbstractLine(_BaseObject):
         return pt1 + s * (pt2 - pt1)
 
     def get_v(self, coords):
+        # stepwise-linear curve independent variable
         seg_index = self._which_segment(coords)
         s = self.get_s(seg_index, coords)
         vlims = self._get_vlims()[seg_index]
@@ -433,9 +443,7 @@ class _AbstractLine(_BaseObject):
             t_vecs.append(pt2 - pt1)
 
         ts = np.linalg.norm(np.array(t_vecs), axis=1)
-        t_sum = sum(ts)
-        ts /= t_sum
-        ts = np.cumsum(ts)
+        ts = np.cumsum(ts / np.sum(ts))
         ts = [0.] + list(ts)
 
         return [(t0, t1) for t0, t1 in zip(ts, ts[1::])]
@@ -446,24 +454,32 @@ class _AbstractLine(_BaseObject):
         pt2 = self.points[seg_index + 1].canvas_coords
         t_vec = pt2 - pt1
 
-        return (coords[0] - pt1[0]) / t_vec[0]
+        # TODO: when both are 0 (it should not be possible - overlap)
+        i = 1 if abs(t_vec[0]) < ATOL else 0
+
+        return (coords[i] - pt1[i]) / t_vec[i]
 
     def _which_segment(self, coords):
         points = self.canvas_coords
 
         for seg_index, (pt1, pt2) in enumerate(zip(points, points[1::])):
             t_vec = pt2 - pt1
-            s = (coords[0] - pt1[0]) / t_vec[0]
-            z2 = pt1[1] + t_vec[1] * s
+            if abs(t_vec[0]) < ATOL:
+                z_cmp = pt1[0]
+                i = 0
+            else:
+                s = (coords[0] - pt1[0]) / t_vec[0]
+                z_cmp = pt1[1] + t_vec[1] * s
+                i = 1
 
-            if abs(z2 - coords[1]) < ATOL:
+            if abs(z_cmp - coords[i]) < ATOL:
                 return seg_index
 
     def add_slider(self, slider):
         self.sliders.append(slider)
 
     def remove_slider(self, slider):
-        self.slides.remove(slider)
+        self.sliders.remove(slider)
 
 
 class Line(_AbstractLine):
@@ -479,30 +495,30 @@ class Line(_AbstractLine):
 
 
 class Slider(_AbstractLine):
+    # TODO: hide also anchor (careful with recursion)
 
     def __init__(self, name, anchor, v_init, v_end, n_points, width=3,
                  size=5, color='green', text='', show=True, allow_delete=True):
-        # TODO: think about best way to pass slider coordinates
         self.anchor = anchor
         self.anchor.add_slider(self)
 
-        self.masters = [MasterSliderPoint(self, v_init, color=color, size=size,
-                                          show=show),
-                        MasterSliderPoint(self, v_end, color=color, size=size,
-                                          show=show)]
+        self.master_pts = [MasterSliderPoint(self, v_init, color=color, size=size,
+                                             show=show),
+                           MasterSliderPoint(self, v_end, color=color, size=size,
+                                             show=show)]
 
-        points = [self.masters[0]]
+        points = [self.master_pts[0]]
         for i in range(n_points - 2):
-            points.append(SliderPoint(self, (i + 1) / (n_points - 1), color=color,
-                                      size=size - 1, show=show))
-        points.append(self.masters[1])
+            points.append(SlaveSliderPoint(self, (i + 1) / (n_points - 1), color=color,
+                                           size=size - 1, show=show))
+        points.append(self.master_pts[1])
 
         super().__init__(name, points, width=width, size=size, color=color,
                          text=text, show=show, allow_delete=allow_delete,
                          allow_translate=False)
 
     def _get_direc(self):
-        return self.masters[1] - self.masters[0]
+        return self.master_pts[1] - self.master_pts[0]
 
     def update(self):
         new_coords = super().update()
@@ -512,9 +528,9 @@ class Slider(_AbstractLine):
             point.canvas_coords = new_coords_
 
     def update_master_pts(self):
-        # TODO: review
-        for pt in self.masters:
+        for pt in self.master_pts:
             pt.update()
 
     def destroy(self):
         super().destroy()
+        self.anchor.remove_slider(self)
