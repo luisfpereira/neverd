@@ -15,16 +15,11 @@ class Canvas(tk.Canvas):
 
     def __init__(self, holder, calibration, image=None, width=800,
                  height=800, **canvas_kwargs):
-        # TODO: inherit from tk?
         super().__init__(holder, width=width, height=height, **canvas_kwargs)
         self.calibration = calibration
         self.image = image or _NoneWidget(show=True)
         self.objects = {}
         self.popup_menu = CanvasPopupMenu(self)
-
-        # update drawing canvas
-        self.calibration.update_canvas(self)
-        self.image.update_canvas(self)
 
         # TODO: create calibration and image widgets
 
@@ -52,9 +47,7 @@ class Canvas(tk.Canvas):
         pass
 
     def add_object(self, obj):
-        obj.update_canvas(self)
-
-        item_id = obj.create_widget()
+        item_id = obj.create_widget(self)
 
         self.objects[item_id] = obj
 
@@ -70,9 +63,7 @@ class Canvas(tk.Canvas):
 class _BaseWidget(metaclass=ABCMeta):
 
     def __init__(self, show):
-        # TODO: probably show as input
         self._show = show
-        self.canvas = None
         self._id = None
 
     @property
@@ -81,7 +72,9 @@ class _BaseWidget(metaclass=ABCMeta):
 
     @id.setter
     def id(self, value):
-        # TODO: raise error if again
+        if self._id is not None:
+            raise Exception('A widget can be set only once')
+
         self._id = value
         self._on_widget_creation()
 
@@ -96,12 +89,11 @@ class _BaseWidget(metaclass=ABCMeta):
         self._show = True
         self.canvas.itemconfigure(self.id, state='normal')
 
-    def update_canvas(self, canvas):
-        # TODO: update or set
-        self.canvas = canvas
+    def create_widget(self, canvas):
+        self._set_canvas(canvas)
 
-    def create_widget(self):
-        pass
+    def _set_canvas(self, canvas):
+        self.canvas = canvas
 
 
 class _NoneWidget(_BaseWidget):
@@ -136,6 +128,7 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
         self.canvas_coords = self._click_coords + self._get_delta_mov(event)
 
     def on_config_delta_mov(self, event):
+        # TODO: update to be more general
         self._click_mouse_coords = event.x, event.y
         self._click_coords = self.canvas_coords
 
@@ -227,7 +220,9 @@ class Point(_BaseObject):
     def _get_init_coords(self):
         return self.canvas.map2canvas(self._init_coords)
 
-    def create_widget(self):
+    def create_widget(self, canvas):
+        super().create_widget(canvas)
+
         (x0, y0), (x1, y1) = self._get_init_rect_corners()
 
         self.id = self.canvas.create_oval(
@@ -237,21 +232,26 @@ class Point(_BaseObject):
 
 
 class LinePoint(Point):
-    # TODO: delete should not be allowed
 
     def __init__(self, line, coords, color='blue', size=5, show=True,
                  allow_translate=True):
         super().__init__(None, coords, color=color, size=size, text='',
-                         show=show, allow_translate=allow_translate,
-                         allow_delete=False)
+                         show=show, allow_translate=allow_translate)
         self.line = line
+
+    @property
+    def popup_menu(self):
+        return self.line.popup_menu
+
+    def _create_popup_menu(self):
+        # uses line menu
+        self.popup_menu.add_triggerer(self)
 
     @property
     def canvas(self):
         return self.line.canvas
 
-    @canvas.setter
-    def canvas(self, *args):
+    def _set_canvas(self, *args):
         pass
 
     @Point.canvas_coords.setter
@@ -309,7 +309,6 @@ class SlaveSliderPoint(LinePoint):
 
 
 class _AbstractLine(_BaseObject):
-    # TODO: hide points in popup menu
 
     def __init__(self, name, points, width=1, size=5, color='red', text='',
                  show=True, allow_translate=True, allow_delete=True):
@@ -333,7 +332,8 @@ class _AbstractLine(_BaseObject):
         for point, new_coords_ in zip(self.points, new_coords):
             point.canvas_coords = new_coords_
 
-    def create_widget(self):
+    def create_widget(self, canvas):
+        self.canvas = canvas
 
         # create line
         coords = [point._get_init_coords() for point in self.points]
@@ -342,7 +342,7 @@ class _AbstractLine(_BaseObject):
 
         # create points (order matters for bindings)
         for point in self.points:
-            point.create_widget()
+            point.create_widget(canvas)
 
         return self.id
 
@@ -352,7 +352,7 @@ class _AbstractLine(_BaseObject):
             point.show()
 
         for slider in self.sliders:
-            slider.show()
+            slider.show(from_anchor=True)
 
     def hide(self):
         super().hide()
@@ -360,7 +360,7 @@ class _AbstractLine(_BaseObject):
             point.hide()
 
         for slider in self.sliders:
-            slider.hide()
+            slider.hide(from_anchor=True)
 
     def destroy(self):
         super().destroy()
@@ -495,7 +495,6 @@ class Line(_AbstractLine):
 
 
 class Slider(_AbstractLine):
-    # TODO: hide also anchor (careful with recursion)
 
     def __init__(self, name, anchor, v_init, v_end, n_points, width=3,
                  size=5, color='green', text='', show=True, allow_delete=True,
@@ -542,3 +541,15 @@ class Slider(_AbstractLine):
 
     def on_translate(self, event):
         self.anchor.canvas_coords = self.anchor._click_coords + self.anchor._get_delta_mov(event)
+
+    def show(self, from_anchor=False):
+        if from_anchor:
+            super().show()
+        else:
+            self.anchor.show()
+
+    def hide(self, from_anchor=False):
+        if from_anchor:
+            super().hide()
+        else:
+            self.anchor.hide()

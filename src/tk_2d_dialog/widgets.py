@@ -59,7 +59,6 @@ class CanvasPopupMenu(_BasePopupMenu):
         super().bind_menu_trigger()
 
     def _config_bindings(self):
-
         self.add_command(label='Show/hide calibration',
                          command=self.on_show_hide_cal)
         self.add_command(label='Show/hide image',
@@ -101,15 +100,24 @@ class ObjectPopupMenu(_BasePopupMenu):
 
     def __init__(self, obj):
         self.object = obj
+        self.triggerers = []
         super().__init__(self.object.canvas,
                          tearoff=0)
 
+    def _unbind_menu_trigger(self, obj):
+        self.object.canvas.tag_unbind(obj.id, '<Button-2>')
+
+    def _bind_menu_trigger(self, obj):
+        self.object.canvas.tag_bind(obj.id, '<Button-2>',
+                                    self.on_popup_menu_trigger)
+
     def unbind_menu_trigger(self):
-        self.object.canvas.tag_bind(self.object.id, '<Button-2>')
+        for obj in [self.object] + self.triggerers:
+            self._unbind_menu_trigger(obj)
 
     def bind_menu_trigger(self):
-        self.object.canvas.tag_bind(self.object.id, '<Button-2>',
-                                    self.on_popup_menu_trigger)
+        for obj in [self.object] + self.triggerers:
+            self._bind_menu_trigger(obj)
 
     def _config_bindings(self):
         self.add_command(label='Show/hide', command=self.on_show_hide)
@@ -126,6 +134,14 @@ class ObjectPopupMenu(_BasePopupMenu):
     def on_delete(self, *args):
         self.object.canvas.delete_object(self.object.id)
         self.object.canvas.popup_menu._bind_right_click()
+
+    def add_triggerer(self, obj):
+        self.triggerers.append(obj)
+        self._bind_menu_trigger(obj)
+
+    def remove_triggerer(self, obj):
+        self.triggerers.remove(obj)
+        self._unbind_menu_trigger(obj)
 
 
 class ObjectPropertiesFrame:
