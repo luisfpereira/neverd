@@ -8,7 +8,7 @@ from tk_2d_dialog.widgets import ObjectPopupMenu
 from tk_2d_dialog.utils import flatten_list
 
 
-ATOL = 1e-4
+ATOL = 1e-6
 
 
 class Canvas(tk.Canvas):
@@ -46,7 +46,7 @@ class Canvas(tk.Canvas):
         x_canvas = canvas_diff[0] * u + self.calibration.pt_top_left.canvas[0]
         y_canvas = canvas_diff[1] * v + self.calibration.pt_top_left.canvas[1]
 
-        return int(x_canvas), int(y_canvas)
+        return x_canvas, y_canvas
 
     def get_by_type(self, obj_type):
         pass
@@ -273,15 +273,12 @@ class MasterSliderPoint(LinePoint):
 
     @LinePoint.canvas_coords.setter
     def canvas_coords(self, center_coords):
-        center_coords_ = self.line.anchor.find_closest_point(center_coords, canvas=True)
+        center_coords_ = self.line.anchor.find_closest_point(center_coords)
         super(MasterSliderPoint, type(self)).canvas_coords.fset(self, center_coords_)
         self.v = self.line.anchor.get_v(center_coords_)
-        print(self.v)
 
     def update(self):
         # when line changes, to keep v
-        print('updating...')
-        print(self.v)
         self.canvas_coords = self.line.anchor.get_coords_by_v(self.v)
 
 
@@ -305,9 +302,8 @@ class SliderPoint(LinePoint):
 
     @canvas_coords.setter
     def canvas_coords(self, center_coords):
-        # assumes right coords are passed
-        # TODO: probably update for int
-        super(LinePoint, type(self)).canvas_coords.fset(self, center_coords)
+        center_coords_ = self.line.anchor.find_closest_point(center_coords)
+        super(LinePoint, type(self)).canvas_coords.fset(self, center_coords_)
 
 
 class _AbstractLine(_BaseObject):
@@ -367,8 +363,8 @@ class _AbstractLine(_BaseObject):
         for slider in self.sliders.copy():
             slider.destroy()
 
-    def find_closest_point(self, coords, canvas=True):
-        line_coords = np.array(self.canvas_coords) if canvas else np.array(self.coords)
+    def find_closest_point(self, coords):
+        line_coords = np.array(self.canvas_coords)
 
         pt = np.array(coords)
         dist = np.linalg.norm(line_coords - pt, axis=1)
@@ -400,8 +396,6 @@ class _AbstractLine(_BaseObject):
         closest_idx = np.argmin(np.linalg.norm(perp_projs, axis=1))
 
         par_proj = par_projs[closest_idx]
-        if canvas:  # in pixel there's no floats
-            par_proj = np.array([int(c) for c in par_proj])
 
         return closest_pt + par_proj
 
@@ -422,6 +416,7 @@ class _AbstractLine(_BaseObject):
         s = (v - vlim1) / (vlim2 - vlim1)
         pt1 = self.points[seg_index].canvas_coords
         pt2 = self.points[seg_index + 1].canvas_coords
+
         return pt1 + s * (pt2 - pt1)
 
     def get_v(self, coords):
@@ -463,9 +458,6 @@ class _AbstractLine(_BaseObject):
 
             if abs(z2 - coords[1]) < ATOL:
                 return seg_index
-
-        # TODO: verify
-        return seg_index
 
     def add_slider(self, slider):
         self.sliders.append(slider)
