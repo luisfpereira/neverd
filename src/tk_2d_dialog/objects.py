@@ -498,7 +498,8 @@ class Slider(_AbstractLine):
     # TODO: hide also anchor (careful with recursion)
 
     def __init__(self, name, anchor, v_init, v_end, n_points, width=3,
-                 size=5, color='green', text='', show=True, allow_delete=True):
+                 size=5, color='green', text='', show=True, allow_delete=True,
+                 allow_translate=True):
         self.anchor = anchor
         self.anchor.add_slider(self)
 
@@ -515,7 +516,7 @@ class Slider(_AbstractLine):
 
         super().__init__(name, points, width=width, size=size, color=color,
                          text=text, show=show, allow_delete=allow_delete,
-                         allow_translate=False)
+                         allow_translate=allow_translate)
 
     def _get_direc(self):
         return self.master_pts[1] - self.master_pts[0]
@@ -534,3 +535,10 @@ class Slider(_AbstractLine):
     def destroy(self):
         super().destroy()
         self.anchor.remove_slider(self)
+
+    def on_config_delta_mov(self, event):
+        self.anchor._click_mouse_coords = event.x, event.y
+        self.anchor._click_coords = self.anchor.canvas_coords
+
+    def on_translate(self, event):
+        self.anchor.canvas_coords = self.anchor._click_coords + self.anchor._get_delta_mov(event)
