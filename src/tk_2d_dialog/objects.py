@@ -45,7 +45,7 @@ class Canvas(tk.Canvas):
         return x_canvas, y_canvas
 
     def get_by_type(self, obj_type):
-        pass
+        return [obj for obj in self.objects.values() if obj.type == obj_type]
 
     def add_object(self, obj):
         item_id = obj.create_widget(self)
@@ -299,9 +299,10 @@ class Point(_BaseObject):
 
     @size.setter
     def size(self, value):
+        coords = self.canvas_coords
         self._size = value
 
-        (x0, y0), (x1, y1) = self._get_rect_corners(self.canvas_coords)
+        (x0, y0), (x1, y1) = self._get_rect_corners(coords)
         self.canvas.coords(self.id, x0, y0, x1, y1)
 
     @property
@@ -387,7 +388,7 @@ class LinePoint(Point):
     @Point.canvas_coords.setter
     def canvas_coords(self, center_coords):
         super(LinePoint, type(self)).canvas_coords.fset(self, center_coords)
-        self.line.update()
+        self.line.update_coords()
 
 
 class MasterSliderPoint(LinePoint):
@@ -407,7 +408,7 @@ class MasterSliderPoint(LinePoint):
         super(MasterSliderPoint, type(self)).canvas_coords.fset(self, center_coords_)
         self.v = self.line.anchor.get_v(center_coords_)
 
-    def update(self):  # TODO: need to rename
+    def update_coords(self):  # TODO: need to rename
         # when line changes, to keep v
         self.canvas_coords = self.line.anchor.get_coords_by_v(self.v)
 
@@ -438,16 +439,25 @@ class SlaveSliderPoint(LinePoint):
         super(LinePoint, type(self)).canvas_coords.fset(self, center_coords)
 
 
-class _AbstractLine(_BaseObject):
+class _AbstractLine(_BaseObject, metaclass=ABCMeta):
 
-    def __init__(self, name, points, width=1, size=5, color='red', text='',
-                 show=True, allow_translate=True, allow_delete=True,
+    def __init__(self, name, points, width=1, size=5, small_size=3, color='red',
+                 text='', show=True, allow_translate=True, allow_delete=True,
                  allow_edit=True):
         super().__init__(name, text, color, show, allow_translate, allow_delete,
                          allow_edit=allow_edit)
         self.points = points
-        self.width = width
+        self._width = width
         self.sliders = []
+        self._size = size  # sizes are useless until they're set
+        self._small_size = small_size
+
+    @_BaseObject.allow_translate.setter
+    def allow_translate(self, value):
+        super(_AbstractLine, type(self)).allow_translate.fset(self, value)
+
+        for slider in self.sliders:
+            slider.allow_translate = value
 
     @property
     def coords(self):
@@ -462,6 +472,41 @@ class _AbstractLine(_BaseObject):
     def canvas_coords(self, new_coords):
         for point, new_coords_ in zip(self.points, new_coords):
             point.canvas_coords = new_coords_
+
+    @property
+    def width(self):
+        return self._width
+
+    @width.setter
+    def width(self, value):
+        self._width = value
+        self.canvas.itemconfigure(self.id, width=value)
+
+    @_BaseObject.color.setter
+    def color(self, value):
+        super(_AbstractLine, type(self)).color.fset(self, value)
+
+        for point in self.points:
+            point.color = self.color
+
+    @property
+    def size(self):
+        return self._size
+
+    @size.setter
+    def size(self, value):
+        self._size = value
+        self.points[0].size = value
+
+    @property
+    def small_size(self):
+        return self._small_size
+
+    @small_size.setter
+    def small_size(self, value):
+        self._small_size = value
+        for point in self.points[1:]:
+            point.size = value
 
     def create_widget(self, canvas):
         self.canvas = canvas
@@ -539,7 +584,7 @@ class _AbstractLine(_BaseObject):
 
         return closest_pt + par_projs[closest_idx]
 
-    def update(self):
+    def update_coords(self):
         new_coords = [point.canvas_coords for point in self.points]
         self.canvas.coords(self.id, flatten_list(new_coords))
 
@@ -612,50 +657,85 @@ class _AbstractLine(_BaseObject):
     def remove_slider(self, slider):
         self.sliders.remove(slider)
 
+    def update(self, name=None, coords=None, color=None, width=None, size=None,
+               small_size=None, text=None, allow_translate=None, allow_delete=None,
+               allow_edit=None):
+        super().update(name, text, color, allow_translate, allow_delete,
+                       allow_edit)
+
+        if width is not None:
+            self.width = width
+
+        if size is not None:
+            self.size = size
+
+        if small_size is not None:
+            self.small_size = small_size
+
+        if coords is not None:
+            self.canvas_coords = [self.canvas.map2canvas(coords_) for coords_ in coords]
+
+    def as_dict(self):
+        data = super().as_dict()
+        data.update(
+            {'coords': list(self.coords),
+             'width': self.width,
+             'size': self.size,
+             'small_size': self.small_size
+             })
+
+        return data
+
 
 class Line(_AbstractLine):
     type = 'Line'
 
-    def __init__(self, name, coords, width=1, size=5, color='red', text='',
-                 show=True, allow_translate=True, allow_delete=True,
+    def __init__(self, name, coords, width=1, size=5, small_size=4, color='red',
+                 text='', show=True, allow_translate=True, allow_delete=True,
                  allow_edit=True):
-        points = [LinePoint(self, coords_, color=color, size=size, show=show,
+
+        points = [LinePoint(self, coords_, color=color, size=small_size, show=show,
                             allow_translate=allow_translate)
                   for coords_ in coords]
-        super().__init__(name, points, width=width, size=size, color=color,
-                         text=text, show=show, allow_translate=allow_translate,
+        points[0]._size = size
+
+        super().__init__(name, points, width=width, size=size,
+                         small_size=small_size, color=color, text=text,
+                         show=show, allow_translate=allow_translate,
                          allow_delete=allow_delete, allow_edit=allow_edit)
 
 
 class Slider(_AbstractLine):
     type = 'Slider'
+    # TODO: change update?
 
     def __init__(self, name, anchor, v_init, v_end, n_points, width=3,
-                 size=5, color='green', text='', show=True, allow_delete=True,
+                 size=5, small_size=4, color='green', text='', show=True, allow_delete=True,
                  allow_translate=True, allow_edit=True):
         self.anchor = anchor
         self.anchor.add_slider(self)
 
         self.master_pts = [MasterSliderPoint(self, v_init, color=color, size=size,
                                              show=show),
-                           MasterSliderPoint(self, v_end, color=color, size=size,
-                                             show=show)]
+                           MasterSliderPoint(self, v_end, color=color,
+                                             size=small_size, show=show)]
 
         points = [self.master_pts[0]]
         for i in range(n_points - 2):
             points.append(SlaveSliderPoint(self, (i + 1) / (n_points - 1), color=color,
-                                           size=size - 1, show=show))
+                                           size=small_size, show=show))
         points.append(self.master_pts[1])
 
-        super().__init__(name, points, width=width, size=size, color=color,
-                         text=text, show=show, allow_delete=allow_delete,
+        super().__init__(name, points, width=width, size=size,
+                         small_size=small_size, color=color, text=text,
+                         show=show, allow_delete=allow_delete,
                          allow_translate=allow_translate, allow_edit=allow_edit)
 
     def _get_direc(self):
         return self.master_pts[1] - self.master_pts[0]
 
-    def update(self):
-        new_coords = super().update()
+    def update_coords(self):
+        new_coords = super().update_coords()
 
         # also update sliders
         for point, new_coords_ in zip(self.points[1:-1], new_coords[1:-1]):
@@ -663,7 +743,7 @@ class Slider(_AbstractLine):
 
     def update_master_pts(self):
         for pt in self.master_pts:
-            pt.update()
+            pt.update_coords()
 
     def destroy(self):
         super().destroy()
@@ -687,3 +767,11 @@ class Slider(_AbstractLine):
             super().hide()
         else:
             self.anchor.hide()
+
+    def as_dict(self):
+        data = super().as_dict()
+
+        v = [self.anchor.get_v(point.canvas_coords) for point in self.master_pts]
+        data.update({'v': v})
+
+        return data

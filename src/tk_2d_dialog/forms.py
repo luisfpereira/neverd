@@ -54,21 +54,37 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         frame = SpinFrame(self.holder, 'size')
         return frame, {'size': frame}
 
-    def _config_allow(self):
-        allow_frame = ttk.Frame(self.holder)
+    def _config_sizes(self):
+        container_frame = ttk.Frame(self.holder)
 
-        translate_frame = BoolFrame(allow_frame, 'allow_translate')
+        size_frame = SpinFrame(container_frame, 'size')
+        size_frame.pack(side='left', fill='both', expand=True)
+
+        small_size_frame = SpinFrame(container_frame, 'small size')
+        small_size_frame.pack(side='left', fill='both', expand=True)
+
+        return container_frame, {'size': size_frame,
+                                 'small_size': small_size_frame}
+
+    def _config_width(self):
+        frame = SpinFrame(self.holder, 'width', default=1)
+        return frame, {'width': frame}
+
+    def _config_allow(self):
+        container_frame = ttk.Frame(self.holder)
+
+        translate_frame = BoolFrame(container_frame, 'allow_translate')
         translate_frame.pack(side='left', fill='both', expand=True)
 
-        edit_frame = BoolFrame(allow_frame, 'allow edit')
+        edit_frame = BoolFrame(container_frame, 'allow edit')
         edit_frame.pack(side='left', fill='both', expand=True)
 
-        delete_frame = BoolFrame(allow_frame, 'allow delete')
+        delete_frame = BoolFrame(container_frame, 'allow delete')
         delete_frame.pack(side='left', fill='both', expand=True)
 
-        return allow_frame, {'allow_translate': translate_frame,
-                             'allow_delete': delete_frame,
-                             'allow_edit': edit_frame}
+        return container_frame, {'allow_translate': translate_frame,
+                                 'allow_delete': delete_frame,
+                                 'allow_edit': edit_frame}
 
     def _config_text(self):
         frame = EntryFrame(self.holder, 'text')
@@ -117,13 +133,97 @@ class PointForm(_BaseForm):
         self.destroy()
 
 
+class LineForm(_BaseForm):
+
+    def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
+        frame_names = ['name', 'coords', 'color', 'width', 'sizes', 'allow',
+                       'text']
+
+        super().__init__(canvas, frame_names, *args, obj=obj,
+                         vert_space=vert_space, **kwargs)
+        title = 'Add new line' if not self.edit else 'Edit line'
+        self.title(title)
+
+    def on_add(self, *args):
+        data = self.get()
+        line = canvas_objects.Line(**data)
+        self.canvas.add_object(line)
+        self.destroy()
+
+    def _config_coords(self):
+        frame = MultipleCoordsFrame(self.holder)
+        return frame, {'coords': frame}
+
+
+class SliderForm(_BaseForm):
+    # TODO: transform data? how to deal with v?
+
+    def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
+        frame_names = ['name', 'lines', 'coords', 'color', 'width', 'sizes',
+                       'allow', 'text']
+
+        super().__init__(canvas, frame_names, *args, obj=obj,
+                         vert_space=vert_space, **kwargs)
+        title = 'Add new slider' if not self.edit else 'Edit slider'
+        self.title(title)
+
+    def _get_lines(self):
+        return self.canvas.get_by_type('Line')
+
+    def _get_line_names(self):
+        return [line.name for line in self._get_lines()]
+
+    def _get_line_from_name(self, line_name):
+        line_names = self._get_line_names()
+        return self._get_lines()[line_names.index(line_name)]
+
+    def _config_coords(self):
+        # TODO: notice this is fixed size
+        frame = MultipleCoordsFrame(self.holder, dim=1)
+        return frame, {'v': frame}
+
+    def _config_lines(self):
+        if self.edit:
+            line_names = [self.object.anchor.name]
+        else:
+            line_names = self._get_line_names()
+
+        frame = ComboFrame(self.holder, 'line name', default=line_names[0],
+                           values=line_names)
+        return frame, {'line': frame}
+
+    def on_add(self, *args):
+        # TODO
+        pass
+
+    def get(self):
+        data = super().get()
+
+        line = self._get_line_from_name(data['line'])
+        if self.edit:
+            del data['line']
+        else:
+            data['line'] = line
+
+        data['coords'] = [self.canvas.map2real(line.get_coords_by_v(v[0])) for v in data['v']]
+        del data['v']
+
+        return data
+
+    def set(self, values):
+        del values['coords']
+        values['v'] = [[v] for v in values['v']]
+        super().set(values)
+
+
 class _LabeledFrame(ttk.Frame):
 
     def __init__(self, holder, label_text):
         super().__init__(holder)
 
-        label = ttk.Label(self, text=label_text)
-        label.pack()
+        if label_text is not None:
+            label = ttk.Label(self, text=label_text)
+            label.pack()
 
     def get(self):
         return self.tk_var.get()
@@ -184,25 +284,52 @@ class SpinFrame(_LabeledFrame):
 
 class CoordsFrame(_LabeledFrame):
 
-    def __init__(self, holder, label_text='coords'):
+    def __init__(self, holder, label_text='coords', dim=2):
         super().__init__(holder, label_text)
+        self.dim = dim
 
-        self.tk_var_x = tk.DoubleVar()
-        self.tk_var_y = tk.DoubleVar()
+        self.tk_vars = [tk.DoubleVar() for _ in range(dim)]
 
-        x_entry = ttk.Entry(self, textvariable=self.tk_var_x)
-        y_entry = ttk.Entry(self, textvariable=self.tk_var_y)
-        x_entry.pack(side='left')
-        y_entry.pack(side='left')
+        for tk_var in self.tk_vars:
+            entry = ttk.Entry(self, textvariable=tk_var)
+            side = 'top' if self.dim == 1 else 'left'
+            entry.pack(side=side)
 
     def get(self):
-        return self.tk_var_x.get(), self.tk_var_y.get()
+        return [tk_var.get() for tk_var in self.tk_vars]
 
     def set(self, values):
-        self.tk_var_x.set(values[0])
-        self.tk_var_y.set(values[1])
+        for tk_var, value in zip(self.tk_vars, values):
+            tk_var.set(value)
+
+
+class MultipleCoordsFrame(_LabeledFrame):
+
+    def __init__(self, holder, label_text='coords', dim=2):
+        super().__init__(holder, label_text)
+        # TODO: add scrollbar
+        # TODO: how to handle point addition in middle?
+        self.dim = dim
+        self.frames = []
+
+    def _add_entry(self, coords):
+        frame = CoordsFrame(self, None, dim=self.dim)
+        frame.pack(fill='both', expand=True)
+        frame.set(coords)
+
+        self.frames.append(frame)
+
+    def set(self, values):
+        # TODO: assumes fixed size for now
+        for values_ in values:
+            self._add_entry(values_)
+
+    def get(self):
+        return [frame.get() for frame in self.frames]
 
 
 OBJ2FORM = {
-    'Point': PointForm
+    'Point': PointForm,
+    'Line': LineForm,
+    'Slider': SliderForm
 }

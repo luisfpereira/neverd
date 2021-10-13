@@ -4,6 +4,8 @@ import tkinter as tk
 
 from tk_2d_dialog.forms import OBJ2FORM
 from tk_2d_dialog.forms import PointForm
+from tk_2d_dialog.forms import LineForm
+from tk_2d_dialog.forms import SliderForm
 
 
 class _BasePopupMenu(tk.Menu, metaclass=ABCMeta):
@@ -199,10 +201,10 @@ class AddPopupMenu(tk.Menu):
         PointForm(self.canvas)
 
     def on_add_line(self):
-        pass
+        LineForm(self.canvas)
 
     def on_add_slider(self):
-        pass
+        SliderForm(self.canvas)
 
 
 class ObjectPropertiesFrame:
