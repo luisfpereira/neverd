@@ -12,6 +12,7 @@ ATOL = 1e-6
 
 
 class Canvas(tk.Canvas):
+    type = 'Canvas'
 
     def __init__(self, holder, calibration, image=None, width=800,
                  height=800, **canvas_kwargs):
@@ -102,20 +103,87 @@ class _NoneWidget(_BaseWidget):
 
 class _BaseObject(_BaseWidget, metaclass=ABCMeta):
 
-    def __init__(self, name, text, show, allow_translate, allow_delete):
+    def __init__(self, name, text, color, show, allow_translate, allow_delete,
+                 allow_edit):
         super().__init__(show)
         self.name = name
         self.text = text
-        self.allow_translate = allow_translate
-        self.allow_delete = allow_delete
+        self._allow_translate = allow_translate
+        self._allow_delete = allow_delete
+        self._allow_edit = allow_edit
+        self._color = color
+
+    @property
+    def color(self):
+        return self._color
+
+    @color.setter
+    def color(self, value):
+        self._color = value
+        self.canvas.itemconfigure(self.id, fill=value)
+
+    @property
+    def allow_translate(self):
+        return self._allow_translate
+
+    @allow_translate.setter
+    def allow_translate(self, value):
+        self._allow_translate = value
+        if value:
+            self.bind_translate()
+        else:
+            self.unbind_translate()
+
+    @property
+    def allow_delete(self):
+        return self._allow_delete
+
+    @allow_delete.setter
+    def allow_delete(self, value):
+        self._allow_delete = value
+        if value:
+            self.bind_delete()
+        else:
+            self.unbind_delete()
+
+    @property
+    def allow_edit(self):
+        return self._allow_edit
+
+    @allow_edit.setter
+    def allow_edit(self, value):
+        self._allow_edit = value
+        if value:
+            self.bind_edit()
+        else:
+            self.unbind_edit()
 
     def show_text(self):
         pass
 
+    def bind_translate(self):
+        self.canvas.tag_bind(self.id, '<Button-1>', self.on_config_delta_mov)
+        self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_translate)
+
+    def unbind_translate(self):
+        self.canvas.tag_unbind(self.id, '<Button-1>')
+        self.canvas.tag_unbind(self.id, '<B1-Motion>')
+
+    def bind_delete(self):
+        self.popup_menu.bind_delete()
+
+    def unbind_delete(self):
+        self.popup_menu.unbind_delete()
+
+    def bind_edit(self):
+        self.popup_menu.bind_edit()
+
+    def unbind_edit(self):
+        self.popup_menu.unbind_edit()
+
     def _config_bindings(self):
         if self.allow_translate:
-            self.canvas.tag_bind(self.id, '<Button-1>', self.on_config_delta_mov)
-            self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_translate)
+            self.bind_translate()
 
         self.canvas.tag_bind(self.id, '<Enter>', self.on_enter)
         self.canvas.tag_bind(self.id, '<Leave>', self.on_leave)
@@ -148,6 +216,36 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
 
     def on_leave(self, *args):
         self.canvas.popup_menu.bind_menu_trigger()
+
+    def as_dict(self):
+        data = {'name': self.name,
+                'text': self.text,
+                'color': self.color,
+                'allow_translate': self.allow_translate,
+                'allow_delete': self.allow_delete,
+                'allow_edit': self.allow_edit}
+
+        return data
+
+    def update(self, name=None, text=None, color=None, allow_translate=None,
+               allow_delete=None, allow_edit=None):
+        if name is not None:
+            self.name = name
+
+        if color is not None:
+            self.color = color
+
+        if text is not None:
+            self.text = text
+
+        if allow_translate is not None:
+            self.allow_translate = allow_translate
+
+        if allow_delete is not None:
+            self.allow_delete = allow_delete
+
+        if allow_edit is not None:
+            self.allow_edit = allow_edit
 
 
 class CalibrationPoint:
@@ -183,16 +281,28 @@ class Image(_BaseWidget):
 
 
 class Point(_BaseObject):
+    type = 'Point'
 
     def __init__(self, name, coords, color='blue', size=5, text='', show=True,
-                 allow_translate=True, allow_delete=True):
-        super().__init__(name, text, show, allow_translate, allow_delete)
+                 allow_translate=True, allow_delete=True, allow_edit=True):
+        super().__init__(name, text, color, show, allow_translate, allow_delete,
+                         allow_edit)
         self._init_coords = coords
-        self.color = color
-        self.size = size
+        self._size = size
 
     def __sub__(self, other):
         return self.canvas_coords - other.canvas_coords
+
+    @property
+    def size(self):
+        return self._size
+
+    @size.setter
+    def size(self, value):
+        self._size = value
+
+        (x0, y0), (x1, y1) = self._get_rect_corners(self.canvas_coords)
+        self.canvas.coords(self.id, x0, y0, x1, y1)
 
     @property
     def coords(self):
@@ -208,9 +318,10 @@ class Point(_BaseObject):
         x, y = center_coords[0] - self.size, center_coords[1] - self.size
         self.canvas.moveto(self.id, x, y)
 
-    def _get_init_rect_corners(self):
+    def _get_rect_corners(self, coords):
         # in canvas coordinates
-        x, y = self._get_init_coords()
+        x, y = coords
+
         r = self.size
         x0, y0 = x - r, y - r
         x1, y1 = x + r, y + r
@@ -223,12 +334,31 @@ class Point(_BaseObject):
     def create_widget(self, canvas):
         super().create_widget(canvas)
 
-        (x0, y0), (x1, y1) = self._get_init_rect_corners()
+        (x0, y0), (x1, y1) = self._get_rect_corners(self._get_init_coords())
 
         self.id = self.canvas.create_oval(
             x0, y0, x1, y1, fill=self.color, outline="")
 
         return self.id
+
+    def update(self, name=None, coords=None, color=None, size=None, text=None,
+               allow_translate=None, allow_delete=None, allow_edit=None):
+        super().update(name, text, color, allow_translate, allow_delete,
+                       allow_edit)
+
+        if size is not None:
+            self.size = size
+
+        if coords is not None:
+            self.canvas_coords = self.canvas.map2canvas(coords)
+
+    def as_dict(self):
+        data = super().as_dict()
+        data.update(
+            {'coords': list(self.coords),
+             'size': self.size})
+
+        return data
 
 
 class LinePoint(Point):
@@ -277,7 +407,7 @@ class MasterSliderPoint(LinePoint):
         super(MasterSliderPoint, type(self)).canvas_coords.fset(self, center_coords_)
         self.v = self.line.anchor.get_v(center_coords_)
 
-    def update(self):
+    def update(self):  # TODO: need to rename
         # when line changes, to keep v
         self.canvas_coords = self.line.anchor.get_coords_by_v(self.v)
 
@@ -311,10 +441,11 @@ class SlaveSliderPoint(LinePoint):
 class _AbstractLine(_BaseObject):
 
     def __init__(self, name, points, width=1, size=5, color='red', text='',
-                 show=True, allow_translate=True, allow_delete=True):
-        super().__init__(name, text, show, allow_translate, allow_delete)
+                 show=True, allow_translate=True, allow_delete=True,
+                 allow_edit=True):
+        super().__init__(name, text, color, show, allow_translate, allow_delete,
+                         allow_edit=allow_edit)
         self.points = points
-        self.color = color
         self.width = width
         self.sliders = []
 
@@ -483,22 +614,25 @@ class _AbstractLine(_BaseObject):
 
 
 class Line(_AbstractLine):
+    type = 'Line'
 
     def __init__(self, name, coords, width=1, size=5, color='red', text='',
-                 show=True, allow_translate=True, allow_delete=True):
+                 show=True, allow_translate=True, allow_delete=True,
+                 allow_edit=True):
         points = [LinePoint(self, coords_, color=color, size=size, show=show,
                             allow_translate=allow_translate)
                   for coords_ in coords]
         super().__init__(name, points, width=width, size=size, color=color,
                          text=text, show=show, allow_translate=allow_translate,
-                         allow_delete=allow_delete)
+                         allow_delete=allow_delete, allow_edit=allow_edit)
 
 
 class Slider(_AbstractLine):
+    type = 'Slider'
 
     def __init__(self, name, anchor, v_init, v_end, n_points, width=3,
                  size=5, color='green', text='', show=True, allow_delete=True,
-                 allow_translate=True):
+                 allow_translate=True, allow_edit=True):
         self.anchor = anchor
         self.anchor.add_slider(self)
 
@@ -515,7 +649,7 @@ class Slider(_AbstractLine):
 
         super().__init__(name, points, width=width, size=size, color=color,
                          text=text, show=show, allow_delete=allow_delete,
-                         allow_translate=allow_translate)
+                         allow_translate=allow_translate, allow_edit=allow_edit)
 
     def _get_direc(self):
         return self.master_pts[1] - self.master_pts[0]

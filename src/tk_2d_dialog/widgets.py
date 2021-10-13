@@ -2,6 +2,7 @@ from abc import ABCMeta
 from abc import abstractmethod
 import tkinter as tk
 
+from tk_2d_dialog.forms import OBJ2FORM
 from tk_2d_dialog.forms import PointForm
 
 
@@ -26,6 +27,13 @@ class _BasePopupMenu(tk.Menu, metaclass=ABCMeta):
     @abstractmethod
     def _config_bindings(self):
         pass
+
+    def has_item(self, item_label):
+        try:
+            self.index(item_label)
+            return True
+        except tk.TclError:
+            return False
 
 
 class CanvasPopupMenu(_BasePopupMenu):
@@ -124,13 +132,36 @@ class ObjectPopupMenu(_BasePopupMenu):
         for obj in [self.object] + self.triggerers:
             self._bind_menu_trigger(obj)
 
+    def _bind_item(self, label, command):
+        if not self.has_item(label):
+            self.add_command(label=label, command=command)
+
+    def _unbind_item(self, label):
+        if self.has_item(label):
+            self.delete(label)
+
+    def bind_delete(self):
+        self._bind_item('Delete', self.on_delete)
+
+    def unbind_delete(self):
+        self._unbind_item('Delete')
+
+    def bind_edit(self):
+        self._bind_item('Edit', self.on_edit)
+
+    def unbind_edit(self):
+        self._unbind_item('Edit')
+
     def _config_bindings(self):
         self.add_command(label='Show/hide', command=self.on_show_hide)
 
-        if self.object.allow_delete:
-            self.add_command(label='Delete', command=self.on_delete)
+        if self.object.allow_edit:
+            self.bind_edit()
 
-    def on_show_hide(self, *argss):
+        if self.object.allow_delete:
+            self.bind_delete()
+
+    def on_show_hide(self, *args):
         if self.object._show:
             self.object.hide()
         else:
@@ -148,11 +179,15 @@ class ObjectPopupMenu(_BasePopupMenu):
         self.triggerers.remove(obj)
         self._unbind_menu_trigger(obj)
 
+    def on_edit(self):
+        OBJ2FORM.get(self.object.type, lambda *args, **kwargs: None)(self.object.canvas, obj=self.object)
+
 
 class AddPopupMenu(tk.Menu):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, canvas, *args, **kwargs):
+        self.canvas = canvas
+        super().__init__(canvas, *args, **kwargs)
         self._config_bindings()
 
     def _config_bindings(self):
@@ -161,7 +196,7 @@ class AddPopupMenu(tk.Menu):
         self.add_command(label='Slider', command=self.on_add_slider)
 
     def on_add_point(self):
-        PointForm()
+        PointForm(self.canvas)
 
     def on_add_line(self):
         pass

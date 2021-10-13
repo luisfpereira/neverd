@@ -3,14 +3,18 @@ from abc import abstractmethod
 import tkinter as tk
 from tkinter import ttk
 
+import tk_2d_dialog.objects as canvas_objects  # avoid circular import
+
 
 class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
 
-    def __init__(self, title, frame_names, *args, vert_space=10, **kwargs):
+    def __init__(self, canvas, frame_names, *args, obj=None,
+                 vert_space=10, **kwargs):
+        self.canvas = canvas
         self.vert_space = vert_space
+        self.object = obj
 
         super().__init__(*args, **kwargs)
-        self.title(title)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
@@ -23,6 +27,15 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
             frame, dict_info = getattr(self, f'_config_{frame_name}')()
             frame.pack(fill='both', expand=True, pady=vert_space_)
             self.info_container.update(dict_info)
+
+        self._config_button(self.edit)
+        if self.edit:
+            data = self.object.as_dict()
+            self.set(data)
+
+    @property
+    def edit(self):
+        return False if self.object is None else True
 
     def _config_name(self):
         frame = EntryFrame(self.holder, 'name')
@@ -47,11 +60,15 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         translate_frame = BoolFrame(allow_frame, 'allow_translate')
         translate_frame.pack(side='left', fill='both', expand=True)
 
+        edit_frame = BoolFrame(allow_frame, 'allow edit')
+        edit_frame.pack(side='left', fill='both', expand=True)
+
         delete_frame = BoolFrame(allow_frame, 'allow delete')
         delete_frame.pack(side='left', fill='both', expand=True)
 
         return allow_frame, {'allow_translate': translate_frame,
-                             'allow_delete': delete_frame}
+                             'allow_delete': delete_frame,
+                             'allow_edit': edit_frame}
 
     def _config_text(self):
         frame = EntryFrame(self.holder, 'text')
@@ -70,10 +87,6 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
     def on_add(self, *args):
         pass
 
-    @abstractmethod
-    def on_edit(self, *args):
-        pass
-
     def get(self):
         return {key: frame.get() for key, frame in self.info_container.items()}
 
@@ -81,21 +94,27 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         for key, value in values.items():
             self.info_container[key].set(value)
 
+    def on_edit(self, *args):
+        data = self.get()
+        self.object.update(**data)
+        self.destroy()
+
 
 class PointForm(_BaseForm):
 
-    def __init__(self, *args, edit=False, vert_space=10, **kwargs):
-        title = 'Add new point' if not edit else 'Edit point'
+    def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
         frame_names = ['name', 'coords', 'color', 'size', 'allow', 'text']
 
-        super().__init__(title, frame_names, *args, vert_space=vert_space, **kwargs)
-        self._config_button(edit)
+        super().__init__(canvas, frame_names, *args, obj=obj,
+                         vert_space=vert_space, **kwargs)
+        title = 'Add new point' if not self.edit else 'Edit point'
+        self.title(title)
 
     def on_add(self, *args):
-        pass
-
-    def on_edit(self, *args):
-        pass
+        data = self.get()
+        point = canvas_objects.Point(**data)
+        self.canvas.add_object(point)
+        self.destroy()
 
 
 class _LabeledFrame(ttk.Frame):
@@ -177,8 +196,13 @@ class CoordsFrame(_LabeledFrame):
         y_entry.pack(side='left')
 
     def get(self):
-        return self.tk_var_x, self.tk_var_y
+        return self.tk_var_x.get(), self.tk_var_y.get()
 
     def set(self, values):
         self.tk_var_x.set(values[0])
         self.tk_var_y.set(values[1])
+
+
+OBJ2FORM = {
+    'Point': PointForm
+}
