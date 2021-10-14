@@ -405,10 +405,10 @@ class MasterSliderPoint(LinePoint):
     @LinePoint.canvas_coords.setter
     def canvas_coords(self, center_coords):
         center_coords_ = self.line.anchor.find_closest_point(center_coords)
-        super(MasterSliderPoint, type(self)).canvas_coords.fset(self, center_coords_)
         self.v = self.line.anchor.get_v(center_coords_)
+        super(MasterSliderPoint, type(self)).canvas_coords.fset(self, center_coords_)
 
-    def update_coords(self):  # TODO: need to rename
+    def update_coords(self):
         # when line changes, to keep v
         self.canvas_coords = self.line.anchor.get_coords_by_v(self.v)
 
@@ -418,10 +418,20 @@ class SlaveSliderPoint(LinePoint):
     def __init__(self, slider, t, color='blue', size=5, show=True):
         super().__init__(slider, None, color=color, size=size, show=show,
                          allow_translate=False)
-        self.t = t
+        self._t = t
 
     def _get_init_coords(self):
         return self.line.anchor.get_coords_by_v(self.v)
+
+    @property
+    def t(self):
+        return self._t
+
+    @t.setter
+    def t(self, value):
+        self._t = value
+        self.canvas_coords = self.canvas_coords  # beautiful
+        self.line.update_coords()
 
     @property
     def v(self):
@@ -707,7 +717,6 @@ class Line(_AbstractLine):
 
 class Slider(_AbstractLine):
     type = 'Slider'
-    # TODO: change update?
 
     def __init__(self, name, anchor, v_init, v_end, n_points, width=3,
                  size=5, small_size=4, color='green', text='', show=True, allow_delete=True,
@@ -721,8 +730,8 @@ class Slider(_AbstractLine):
                                              size=small_size, show=show)]
 
         points = [self.master_pts[0]]
-        for i in range(n_points - 2):
-            points.append(SlaveSliderPoint(self, (i + 1) / (n_points - 1), color=color,
+        for t in self._get_ts(n_points):
+            points.append(SlaveSliderPoint(self, t, color=color,
                                            size=small_size, show=show))
         points.append(self.master_pts[1])
 
@@ -731,13 +740,45 @@ class Slider(_AbstractLine):
                          show=show, allow_delete=allow_delete,
                          allow_translate=allow_translate, allow_edit=allow_edit)
 
+    def _get_ts(self, n_points):
+        return [(i + 1) / (n_points - 1) for i in range(n_points - 2)]
+
+    @property
+    def n_points(self):
+        return len(self.points)
+
+    @n_points.setter
+    def n_points(self, n_points):
+        if self.n_points == n_points:
+            return
+
+        # TODO: deal with point addition and/or deletion
+        for point, t in zip(self.points[1:-1], self._get_ts(n_points)):
+            point.t = t
+
+    @property
+    def v_init(self):
+        return self.master_pts[0].v
+
+    @v_init.setter
+    def v_init(self, value):
+        self.master_pts[0].canvas_coords = self.anchor.get_coords_by_v(value)
+
+    @property
+    def v_end(self):
+        return self.master_pts[1].v
+
+    @v_end.setter
+    def v_end(self, value):
+        self.master_pts[1].canvas_coords = self.anchor.get_coords_by_v(value)
+
     def _get_direc(self):
         return self.master_pts[1] - self.master_pts[0]
 
     def update_coords(self):
         new_coords = super().update_coords()
 
-        # also update sliders
+        # also update slaves
         for point, new_coords_ in zip(self.points[1:-1], new_coords[1:-1]):
             point.canvas_coords = new_coords_
 
@@ -768,10 +809,26 @@ class Slider(_AbstractLine):
         else:
             self.anchor.hide()
 
+    def update(self, name=None, v_init=None, v_end=None, n_points=None,
+               color=None, width=None, size=None, small_size=None, text=None,
+               allow_translate=None, allow_delete=None, allow_edit=None):
+        super().update(name, None, color, width, size, small_size, text,
+                       allow_translate, allow_delete, allow_edit)
+
+        if v_init is not None:
+            self.v_init = v_init
+
+        if v_end is not None:
+            self.v_end = v_end
+
+        if n_points is not None:
+            self.n_points = n_points
+
     def as_dict(self):
         data = super().as_dict()
 
-        v = [self.anchor.get_v(point.canvas_coords) for point in self.master_pts]
-        data.update({'v': v})
+        data.update({'v_init': self.v_init,
+                     'v_end': self.v_end,
+                     'n_points': self.n_points})
 
         return data

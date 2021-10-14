@@ -159,8 +159,8 @@ class SliderForm(_BaseForm):
     # TODO: transform data? how to deal with v?
 
     def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
-        frame_names = ['name', 'lines', 'coords', 'color', 'width', 'sizes',
-                       'allow', 'text']
+        frame_names = ['name', 'lines', 'coords', 'n_points', 'color', 'width',
+                       'sizes', 'allow', 'text']
 
         super().__init__(canvas, frame_names, *args, obj=obj,
                          vert_space=vert_space, **kwargs)
@@ -180,7 +180,15 @@ class SliderForm(_BaseForm):
     def _config_coords(self):
         # TODO: notice this is fixed size
         frame = MultipleCoordsFrame(self.holder, dim=1)
+
+        if not self.edit:
+            frame.set([[0.], [1.]])
+
         return frame, {'v': frame}
+
+    def _config_n_points(self):
+        frame = SpinFrame(self.holder, 'number of points', default=3, from_=2)
+        return frame, {'n_points': frame}
 
     def _config_lines(self):
         if self.edit:
@@ -188,31 +196,37 @@ class SliderForm(_BaseForm):
         else:
             line_names = self._get_line_names()
 
-        frame = ComboFrame(self.holder, 'line name', default=line_names[0],
+        frame = ComboFrame(self.holder, 'anchor name', default=line_names[0],
                            values=line_names)
-        return frame, {'line': frame}
+        return frame, {'anchor': frame}
 
     def on_add(self, *args):
-        # TODO
-        pass
+        data = self.get()
+        slider = canvas_objects.Slider(**data)
+        self.canvas.add_object(slider)
+        self.destroy()
 
     def get(self):
         data = super().get()
 
-        line = self._get_line_from_name(data['line'])
+        line = self._get_line_from_name(data['anchor'])
         if self.edit:
-            del data['line']
+            del data['anchor']
         else:
-            data['line'] = line
+            data['anchor'] = line
 
-        data['coords'] = [self.canvas.map2real(line.get_coords_by_v(v[0])) for v in data['v']]
+        data['v_init'], data['v_end'] = [v[0] for v in data['v']]
         del data['v']
 
         return data
 
     def set(self, values):
         del values['coords']
-        values['v'] = [[v] for v in values['v']]
+
+        values['v'] = [[v] for v in [values['v_init'], values['v_end']]]
+        del values['v_init']
+        del values['v_end']
+
         super().set(values)
 
 
