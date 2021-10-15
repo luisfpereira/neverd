@@ -205,11 +205,14 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
                          event.y - self._click_mouse_coords[1]))
 
     def destroy(self):
-        self.popup_menu.destroy()
+        self._destroy_popup_menu()
         self.canvas.delete(self.id)
 
     def _create_popup_menu(self):
         self.popup_menu = ObjectPopupMenu(self)
+
+    def _destroy_popup_menu(self):
+        self.popup_menu.destroy()
 
     def on_enter(self, *args):
         self.canvas.popup_menu.unbind_menu_trigger()
@@ -377,6 +380,9 @@ class LinePoint(Point):
     def _create_popup_menu(self):
         # uses line menu
         self.popup_menu.add_triggerer(self)
+
+    def _destroy_popup_menu(self):
+        pass
 
     @property
     def canvas(self):
@@ -752,8 +758,26 @@ class Slider(_AbstractLine):
         if self.n_points == n_points:
             return
 
-        # TODO: deal with point addition and/or deletion
-        for point, t in zip(self.points[1:-1], self._get_ts(n_points)):
+        previous_n = self.n_points
+
+        if previous_n > n_points:  # delete points
+            diff_n = previous_n - n_points
+            for i in range(diff_n):
+                self.points[i + 1].destroy()
+
+            del self.points[1:(1 + diff_n)]
+
+        # add missing points
+        ts = self._get_ts(n_points)
+        if len(ts) > previous_n - 2:
+            for t in ts[previous_n - 2:]:
+                new_point = SlaveSliderPoint(self, t, color=self.color,
+                                             size=self.small_size, show=self.show)
+                new_point.create_widget(self.canvas)
+                self.points.insert(-2, new_point)
+
+        # update points t
+        for point, t in zip(self.points[1:-1], ts):
             point.t = t
 
     @property
