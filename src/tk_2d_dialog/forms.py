@@ -1,9 +1,11 @@
+
 from abc import ABCMeta
 from abc import abstractmethod
 import tkinter as tk
 from tkinter import ttk
 
 import tk_2d_dialog.objects as canvas_objects  # avoid circular import
+from tk_2d_dialog.generic_widgets import ScrollableFrame
 
 
 class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
@@ -327,22 +329,22 @@ class CoordsFrame(_LabeledFrame):
 
 class MultipleCoordsFrame(_LabeledFrame):
 
-    def __init__(self, holder, label_text='coords', dim=2):
+    def __init__(self, holder, label_text='coords', dim=2, height=100):
         super().__init__(holder, label_text)
-        # TODO: add scrollbar
-        # TODO: how to handle point addition in middle?
         self.dim = dim
         self.frames = []
 
+        self.scrollable_frame = ScrollableFrame(self, height=height, width=1e6)
+
     def _add_entry(self, coords):
-        frame = CoordsFrame(self, None, dim=self.dim)
-        frame.pack(fill='both', expand=True)
+        frame = CoordsFrame(self.scrollable_frame, None, dim=self.dim)
+
+        frame.pack()
         frame.set(coords)
 
         self.frames.append(frame)
 
     def set(self, values):
-        # TODO: assumes fixed size for now
         for values_ in values:
             self._add_entry(values_)
 
@@ -354,4 +356,6 @@ OBJ2FORM = {
     'Point': PointForm,
     'Line': LineForm,
     'Slider': SliderForm
+
+
 }
