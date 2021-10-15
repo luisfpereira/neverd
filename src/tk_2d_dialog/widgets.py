@@ -185,6 +185,31 @@ class ObjectPopupMenu(_BasePopupMenu):
         OBJ2FORM.get(self.object.type, lambda *args, **kwargs: None)(self.object.canvas, obj=self.object)
 
 
+class SliderPopupMenu(ObjectPopupMenu):
+
+    def _config_bindings(self):
+        super()._config_bindings()
+
+        if self.object.allow_edit:
+            self.bind_refine()
+
+    def bind_refine(self):
+        self.add_command(label='Refine', command=self.on_refine)
+        self.add_command(label='Coarse', command=self.on_coarse)
+
+    def unbind_edit(self):
+        super().unbind_edit()
+        self._unbind_item('Refine')
+        self._unbind_item('Coarse')
+
+    def on_refine(self):
+        self.object.n_points = self.object.n_points + 1
+
+    def on_coarse(self):
+        if self.object.n_points > 2:
+            self.object.n_points = self.object.n_points - 1
+
+
 class AddPopupMenu(tk.Menu):
 
     def __init__(self, canvas, *args, **kwargs):
@@ -205,31 +230,3 @@ class AddPopupMenu(tk.Menu):
 
     def on_add_slider(self):
         SliderForm(self.canvas)
-
-
-class ObjectPropertiesFrame:
-    pass
-
-
-class PointTreeview:
-    pass
-
-
-class LineTreeview:
-    pass
-
-
-class SliderTreeview:
-    pass
-
-
-class ColorDropDown:
-    pass
-
-
-class WidthDropDown:
-    pass
-
-
-class SizeDropDown:
-    pass

@@ -5,6 +5,7 @@ import numpy as np
 
 from tk_2d_dialog.widgets import CanvasPopupMenu
 from tk_2d_dialog.widgets import ObjectPopupMenu
+from tk_2d_dialog.widgets import SliderPopupMenu
 from tk_2d_dialog.utils import flatten_list
 
 
@@ -774,11 +775,14 @@ class Slider(_AbstractLine):
                 new_point = SlaveSliderPoint(self, t, color=self.color,
                                              size=self.small_size, show=self.show)
                 new_point.create_widget(self.canvas)
-                self.points.insert(-2, new_point)
+                self.points.insert(-1, new_point)
 
         # update points t
-        for point, t in zip(self.points[1:-1], ts):
-            point.t = t
+        if len(ts) > 0:
+            for point, t in zip(self.points[1:-1], ts):
+                point.t = t
+        else:
+            self.update_coords()  # guarantees update of line coords
 
     @property
     def v_init(self):
@@ -795,6 +799,9 @@ class Slider(_AbstractLine):
     @v_end.setter
     def v_end(self, value):
         self.master_pts[1].canvas_coords = self.anchor.get_coords_by_v(value)
+
+    def _create_popup_menu(self):
+        self.popup_menu = SliderPopupMenu(self)
 
     def _get_direc(self):
         return self.master_pts[1] - self.master_pts[0]
