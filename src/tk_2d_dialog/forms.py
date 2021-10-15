@@ -158,9 +158,11 @@ class LineForm(_BaseForm):
 class SliderForm(_BaseForm):
     # TODO: transform data? how to deal with v?
 
-    def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
+    def __init__(self, canvas, *args, obj=None, vert_space=10, line_names=None,
+                 **kwargs):
         frame_names = ['name', 'lines', 'coords', 'n_points', 'color', 'width',
                        'sizes', 'allow', 'text']
+        self.line_names = line_names
 
         super().__init__(canvas, frame_names, *args, obj=obj,
                          vert_space=vert_space, **kwargs)
@@ -172,6 +174,12 @@ class SliderForm(_BaseForm):
 
     def _get_line_names(self):
         return [line.name for line in self._get_lines()]
+
+    def _get_available_line_names(self):
+        if self.line_names is not None:
+            return self.line_names
+        else:
+            return self._get_line_names()
 
     def _get_line_from_name(self, line_name):
         line_names = self._get_line_names()
@@ -194,7 +202,7 @@ class SliderForm(_BaseForm):
         if self.edit:
             line_names = [self.object.anchor.name]
         else:
-            line_names = self._get_line_names()
+            line_names = self._get_available_line_names()
 
         frame = ComboFrame(self.holder, 'anchor name', default=line_names[0],
                            values=line_names)

@@ -5,6 +5,7 @@ import numpy as np
 
 from tk_2d_dialog.widgets import CanvasPopupMenu
 from tk_2d_dialog.widgets import ObjectPopupMenu
+from tk_2d_dialog.widgets import LinePopupMenu
 from tk_2d_dialog.widgets import SliderPopupMenu
 from tk_2d_dialog.utils import flatten_list
 
@@ -658,14 +659,13 @@ class _AbstractLine(_BaseObject, metaclass=ABCMeta):
         for seg_index, (pt1, pt2) in enumerate(zip(points, points[1::])):
             t_vec = pt2 - pt1
             if abs(t_vec[0]) < ATOL:
-                z_cmp = pt1[0]
-                i = 0
+                i, j = 0, 1
             else:
-                s = (coords[0] - pt1[0]) / t_vec[0]
-                z_cmp = pt1[1] + t_vec[1] * s
-                i = 1
+                i, j = 1, 0
 
-            if abs(z_cmp - coords[i]) < ATOL:
+            s = (coords[j] - pt1[j]) / t_vec[j]
+            z_cmp = pt1[i] + t_vec[i] * s
+            if 0 <= s <= 1 and abs(z_cmp - coords[i]) < ATOL:
                 return seg_index
 
     def add_slider(self, slider):
@@ -721,6 +721,42 @@ class Line(_AbstractLine):
                          show=show, allow_translate=allow_translate,
                          allow_delete=allow_delete, allow_edit=allow_edit)
 
+    def _create_popup_menu(self):
+        self.popup_menu = LinePopupMenu(self)
+
+    def add_point(self, coords, pos=None):
+        point = LinePoint(self, self.canvas.map2real(coords), color=self.color,
+                          size=self.small_size,
+                          show=self.show, allow_translate=self.allow_translate)
+        point.create_widget(self.canvas)
+
+        if pos not in ['begin', 'end']:
+            seg_index = self._which_segment(point.canvas_coords)
+            self.points.insert(seg_index + 1, point)
+
+        elif pos == 'begin':
+            point.size = self.size
+            self.points.insert(0, point)
+
+        else:
+            self.points.append(point)
+
+        self.update_coords()
+
+    def remove_point(self, point):
+        if len(self.points) < 3:
+            return
+
+        index = self.points.index(point)
+
+        self.points[index].destroy()
+        del self.points[index]
+
+        if index == 0:
+            self.points[0].size = self.size
+
+        self.update_coords()
+
 
 class Slider(_AbstractLine):
     type = 'Slider'
@@ -750,13 +786,13 @@ class Slider(_AbstractLine):
     def _get_ts(self, n_points):
         return [(i + 1) / (n_points - 1) for i in range(n_points - 2)]
 
-    @property
+    @ property
     def n_points(self):
         return len(self.points)
 
-    @n_points.setter
+    @ n_points.setter
     def n_points(self, n_points):
-        if self.n_points == n_points:
+        if self.n_points == n_points or n_points < 3:
             return
 
         previous_n = self.n_points
@@ -784,19 +820,19 @@ class Slider(_AbstractLine):
         else:
             self.update_coords()  # guarantees update of line coords
 
-    @property
+    @ property
     def v_init(self):
         return self.master_pts[0].v
 
-    @v_init.setter
+    @ v_init.setter
     def v_init(self, value):
         self.master_pts[0].canvas_coords = self.anchor.get_coords_by_v(value)
 
-    @property
+    @ property
     def v_end(self):
         return self.master_pts[1].v
 
-    @v_end.setter
+    @ v_end.setter
     def v_end(self, value):
         self.master_pts[1].canvas_coords = self.anchor.get_coords_by_v(value)
 

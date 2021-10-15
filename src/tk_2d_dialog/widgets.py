@@ -12,8 +12,8 @@ class _BasePopupMenu(tk.Menu, metaclass=ABCMeta):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.bind_menu_trigger()
         self._config_bindings()
+        self.bind_menu_trigger()
 
     def unbind_menu_trigger(self):
         self.master.unbind('<Button-2>')
@@ -116,15 +116,27 @@ class ObjectPopupMenu(_BasePopupMenu):
     def __init__(self, obj):
         self.object = obj
         self.triggerers = []
+        self.preferred_order = self._define_preferred_order()
         super().__init__(self.object.canvas,
                          tearoff=0)
+
+    def _define_preferred_order(self):
+        return ['Show/hide', 'Edit', 'Delete']
+
+    def _get_placement_index(self, label):
+        index = self.preferred_order.index(label)
+        for label in self.preferred_order[:index]:
+            if not self.has_item(label):
+                index -= 1
+
+        return index
 
     def _unbind_menu_trigger(self, obj):
         self.object.canvas.tag_unbind(obj.id, '<Button-2>')
 
     def _bind_menu_trigger(self, obj):
         self.object.canvas.tag_bind(obj.id, '<Button-2>',
-                                    self.on_popup_menu_trigger)
+                                    self.on_popup_menu_trigger, add='+')
 
     def unbind_menu_trigger(self):
         for obj in [self.object] + self.triggerers:
@@ -135,8 +147,14 @@ class ObjectPopupMenu(_BasePopupMenu):
             self._bind_menu_trigger(obj)
 
     def _bind_item(self, label, command):
+        # TODO: move parent?
         if not self.has_item(label):
-            self.add_command(label=label, command=command)
+            if label in self.preferred_order:
+                index = self._get_placement_index(label)
+                self.insert_command(index=index, label=label,
+                                    command=command)
+            else:
+                self.add_command(label=label, command=command)
 
     def _unbind_item(self, label):
         if self.has_item(label):
@@ -185,6 +203,93 @@ class ObjectPopupMenu(_BasePopupMenu):
         OBJ2FORM.get(self.object.type, lambda *args, **kwargs: None)(self.object.canvas, obj=self.object)
 
 
+class LinePopupMenu(ObjectPopupMenu):
+
+    def _config_bindings(self):
+        super()._config_bindings()
+
+        self.bind_store_click_position()
+
+        if self.object.allow_edit:
+            self.bind_add_point()
+            self._bind_item('Refine', self.on_refine)
+            self.bind_add_slider()
+
+    def _define_preferred_order(self):
+        order = super()._define_preferred_order()
+        order.extend(['Refine',
+                      'Add point',
+                      'Remove point',
+                      'Add slider'])
+        return order
+
+    def bind_store_click_position(self):
+        self.object.canvas.tag_bind(self.object.id, '<Button-2>',
+                                    self.on_store_click_position, add='+')
+
+    def bind_trigger(self, obj):
+        # avoid addition of overlapped point
+        self.object.canvas.tag_bind(obj.id, '<Enter>',
+                                    self.unbind_add_point, add='+')
+        self.object.canvas.tag_bind(obj.id, '<Leave>',
+                                    self.bind_add_point, add='+')
+
+        # hide remove point if not point
+        self.object.canvas.tag_bind(obj.id, '<Enter>',
+                                    lambda e, point=obj: self.bind_remove_point(point, e), add='+')
+        self.object.canvas.tag_bind(obj.id, '<Leave>',
+                                    self.unbind_remove_point, add='+')
+
+    def add_triggerer(self, obj):
+        super().add_triggerer(obj)
+        self.bind_trigger(obj)
+
+    def unbind_edit(self):
+        super().unbind_edit()
+        self._unbind_item('Add slider')
+        self._unbind_add_point()
+        self._unbind_item('Refine')
+
+    def bind_add_point(self, *args):
+        self._bind_item('Add point', self.on_add_point)
+
+    def unbind_add_point(self, *args):
+        self._unbind_item('Add point')
+
+    def bind_add_slider(self):
+        self._bind_item('Add slider', self.on_add_slider)
+
+    def bind_remove_point(self, point, *args):
+        self._bind_item('Remove point',
+                        lambda point=point: self.on_remove_point(point))
+
+    def unbind_remove_point(self, *args):
+        self._unbind_item('Remove point')
+
+    def on_add_slider(self):
+        SliderForm(self.object.canvas, line_names=[self.object.name])
+
+    def on_add_point(self):
+        coords = (self._x, self._y)
+        new_coords = self.object.find_closest_point(coords)
+        self.object.add_point(new_coords)
+
+    def on_refine(self):
+        coords = self.object.canvas_coords
+        for coords1, coords2 in zip(coords, coords[1::]):
+            new_coords = (coords2 + coords1) / 2
+            self.object.add_point(new_coords)
+
+    def on_remove_point(self, point):
+        self.object.remove_point(point)
+        self.unbind_remove_point()
+        self.bind_add_point()
+
+    def on_store_click_position(self, event):
+        self._x = event.x
+        self._y = event.y
+
+
 class SliderPopupMenu(ObjectPopupMenu):
 
     def _config_bindings(self):
@@ -193,9 +298,14 @@ class SliderPopupMenu(ObjectPopupMenu):
         if self.object.allow_edit:
             self.bind_refine()
 
+    def _define_preferred_order(self):
+        order = super()._define_preferred_order()
+        order.extend(['Refine', 'Coarse'])
+        return order
+
     def bind_refine(self):
-        self.add_command(label='Refine', command=self.on_refine)
-        self.add_command(label='Coarse', command=self.on_coarse)
+        self._bind_item('Refine', self.on_refine)
+        self._bind_item('Coarse', self.on_coarse)
 
     def unbind_edit(self):
         super().unbind_edit()
@@ -206,8 +316,7 @@ class SliderPopupMenu(ObjectPopupMenu):
         self.object.n_points = self.object.n_points + 1
 
     def on_coarse(self):
-        if self.object.n_points > 2:
-            self.object.n_points = self.object.n_points - 1
+        self.object.n_points = self.object.n_points - 1
 
 
 class AddPopupMenu(tk.Menu):
