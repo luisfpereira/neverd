@@ -13,11 +13,8 @@ class ScrollableFrame(ttk.Frame):
         self.height = height
         self.fixed_width = fixed_width
         self.fixed_height = fixed_height
-        self.scrollbar_y = None
-        self.scrollbar_x = None
 
         canvas_holder = ttk.Frame(holder)
-        canvas_holder.pack()
 
         self.canvas = tk.Canvas(canvas_holder)
         self.canvas.grid(row=0, column=0, sticky="news")
@@ -28,47 +25,44 @@ class ScrollableFrame(ttk.Frame):
         self.canvas.create_window((0, 0), window=self,
                                   anchor="nw")
 
-    def _activate_scrollbar_y(self):
-        if self.scrollbar_y is not None:
-            return
+        self._create_scrollbar_y()
+        self._create_scrollbar_x()
 
+        self._config_bindings()
+
+        self.event_generate('<Configure>')  # to resize
+
+    def _config_bindings(self):
+        self.canvas.bind('<Enter>', self.on_enter)
+        self.canvas.bind('<Leave>', self.on_leave)
+
+    def _create_scrollbar_y(self):
         self.scrollbar_y = ttk.Scrollbar(self.canvas.master, orient='vertical',
                                          command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.scrollbar_y.set)
-        self.scrollbar_y.grid(row=0, column=1, sticky="ns")
-        self._bind_scroll_y_activation()
+        self.scrollbar_y.active = False
 
-    def _deactivate_scrollbar_y(self):
-        if self.scrollbar_y is None:
-            return
-
-        self.scrollbar_y.destroy()
-        self.scrollbar_y = None
-
-    def _activate_scrollbar_x(self):
-        if self.scrollbar_x is not None:
-            return
-
+    def _create_scrollbar_x(self):
         self.scrollbar_x = ttk.Scrollbar(self.canvas.master, orient="horizontal",
                                          command=self.canvas.xview)
         self.canvas.configure(xscrollcommand=self.scrollbar_x.set)
+        self.scrollbar_x.active = False
+
+    def _activate_scrollbar_y(self):
+        self.scrollbar_y.grid(row=0, column=1, sticky="ns")
+        self.scrollbar_y.active = True
+
+    def _deactivate_scrollbar_y(self):
+        self.scrollbar_y.grid_forget()
+        self.scrollbar_y.active = False
+
+    def _activate_scrollbar_x(self):
         self.scrollbar_x.grid(row=1, column=0, sticky="we")
-        self._bind_scroll_x_activation()
+        self.scrollbar_x.active = True
 
     def _deactivate_scrollbar_x(self):
-        if self.scrollbar_x is None:
-            return
-
-        self.scrollbar_x.destroy()
-        self.scrollbar_x = None
-
-    def _bind_scroll_y_activation(self):
-        self.canvas.bind('<Enter>', self._bind_scroll_y, add='+')
-        self.canvas.bind('<Leave>', self._unbind_scroll_y, add='+')
-
-    def _bind_scroll_x_activation(self):
-        self.canvas.bind('<Enter>', self._bind_scroll_x, add='+')
-        self.canvas.bind('<Leave>', self._unbind_scroll_x, add='+')
+        self.scrollbar_x.grid_forget()
+        self.scrollbar_x.active = False
 
     def _bind_scroll_y(self, *args):
         if self._sys == 'Linux':
@@ -133,3 +127,21 @@ class ScrollableFrame(ttk.Frame):
             self._activate_scrollbar_x()
         else:
             self._deactivate_scrollbar_x()
+
+    def on_enter(self, *args):
+        if self.scrollbar_y.active:
+            self._bind_scroll_y()
+
+        if self.scrollbar_x.active:
+            self._bind_scroll_x()
+
+    def on_leave(self, *args):
+        self._unbind_scroll_y()
+        self._unbind_scroll_x()
+
+    def pack(self, *args, **kwargs):
+        self.canvas.master.pack(*args, **kwargs)
+
+    def destroy(self, *args, **kwargs):
+        super().destroy()
+        self.canvas.master.destroy(*args, **kwargs)
