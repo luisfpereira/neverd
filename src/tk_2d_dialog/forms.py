@@ -101,6 +101,10 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
                              text='Add')
         btn.pack(pady=self.vert_space)
 
+    def _config_n_points(self):
+        frame = SpinFrame(self.holder, 'number of points', default=2, from_=2)
+        return frame, {'n_points': frame}
+
     @abstractmethod
     def on_add(self, *args):
         pass
@@ -140,11 +144,42 @@ class LineForm(_BaseForm):
     def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
         frame_names = ['name', 'coords', 'color', 'width', 'sizes', 'allow',
                        'text']
+        if obj is None:
+            frame_names.insert(1, 'n_points')
 
         super().__init__(canvas, frame_names, *args, obj=obj,
                          vert_space=vert_space, **kwargs)
         title = 'Add new line' if not self.edit else 'Edit line'
         self.title(title)
+
+        if not self.edit:
+            self._config_coords_bindings()
+            self._set_default_coords()
+
+    def _get_n_points_frame(self):
+        return self.info_container['n_points']
+
+    def _get_coords_frame(self):
+        return self.info_container['coords']
+
+    def _set_default_coords(self):
+        coords_frame = self._get_coords_frame()
+        coords_frame.set([[0., 0.], [0., 0.]])
+
+    def _config_coords_bindings(self):
+        n_points_frame = self._get_n_points_frame()
+        n_points_frame.tk_var.trace('w', self._update_coords_frame)
+
+    def _update_coords_frame(self, *args):
+        n_points_frame = self._get_n_points_frame()
+        n_points = n_points_frame.tk_var.get()
+
+        coords_frame = self._get_coords_frame()
+        n_frames = len(coords_frame.frames)
+        if n_frames < n_points:
+            coords_frame.add_entry([0., 0.])
+        elif n_frames > n_points:
+            coords_frame.remove_last_entry()
 
     def on_add(self, *args):
         data = self.get()
@@ -158,7 +193,6 @@ class LineForm(_BaseForm):
 
 
 class SliderForm(_BaseForm):
-    # TODO: transform data? how to deal with v?
 
     def __init__(self, canvas, *args, obj=None, vert_space=10, line_names=None,
                  **kwargs):
@@ -188,17 +222,12 @@ class SliderForm(_BaseForm):
         return self._get_lines()[line_names.index(line_name)]
 
     def _config_coords(self):
-        # TODO: notice this is fixed size
         frame = MultipleCoordsFrame(self.holder, dim=1)
 
         if not self.edit:
             frame.set([[0.], [1.]])
 
         return frame, {'v': frame}
-
-    def _config_n_points(self):
-        frame = SpinFrame(self.holder, 'number of points', default=3, from_=2)
-        return frame, {'n_points': frame}
 
     def _config_lines(self):
         if self.edit:
@@ -335,18 +364,23 @@ class MultipleCoordsFrame(_LabeledFrame):
         self.frames = []
 
         self.scrollable_frame = ScrollableFrame(self, height=height, width=1e6)
+        self.scrollable_frame.pack()
 
-    def _add_entry(self, coords):
+    def add_entry(self, coords):
         frame = CoordsFrame(self.scrollable_frame, None, dim=self.dim)
+        frame.set(coords)
 
         frame.pack()
-        frame.set(coords)
 
         self.frames.append(frame)
 
+    def remove_last_entry(self):
+        self.frames[-1].destroy()
+        del self.frames[-1]
+
     def set(self, values):
         for values_ in values:
-            self._add_entry(values_)
+            self.add_entry(values_)
 
     def get(self):
         return [frame.get() for frame in self.frames]
