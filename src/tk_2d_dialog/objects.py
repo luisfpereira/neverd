@@ -3,19 +3,18 @@ import tkinter as tk
 
 import numpy as np
 
-from tk_2d_dialog.widgets import CanvasPopupMenu
-from tk_2d_dialog.widgets import ObjectPopupMenu
-from tk_2d_dialog.widgets import LinePopupMenu
-from tk_2d_dialog.widgets import SliderPopupMenu
+from tk_2d_dialog.popups import CanvasPopupMenu
+from tk_2d_dialog.popups import ObjectPopupMenu
+from tk_2d_dialog.popups import LinePopupMenu
+from tk_2d_dialog.popups import SliderPopupMenu
 from tk_2d_dialog.utils import flatten_list
 
 
 ATOL = 1e-6
 
 
-class Canvas(tk.Canvas):
-    # TODO: call it GeometricCanvas or Dialog2D (better name?)?
-    type = 'Canvas'
+class GeometricCanvas(tk.Canvas):
+    type = 'GeometricCanvas'
 
     def __init__(self, holder, width=800, height=800, **canvas_kwargs):
         super().__init__(holder, width=width, height=height, **canvas_kwargs)
@@ -228,6 +227,7 @@ class _BaseCanvasObject(metaclass=ABCMeta):
         self.canvas.popup_menu.bind_menu_trigger()
 
     def as_dict(self):
+        # TODO: bring type to update
         data = {'name': self.name,
                 'text': self.text,
                 'color': self.color,
@@ -475,7 +475,7 @@ class _CalibrationRectangle(_CompositeBaseObject):
 
 
 class Image(_BaseCanvasObject):
-    # TODO
+    # TODO: call canvas image?
 
     def __init__(self, path, upper_left_corner=(0, 0), show=True):
         super().__init__(show)
@@ -700,7 +700,7 @@ class _MasterCalibrationPoint(_DependentPoint, _CalibrationPoint):
                 return 'bottom_right'
 
 
-class LinePoint(_DependentPoint):
+class _LinePoint(_DependentPoint):
 
     def __init__(self, line, coords, color='blue', size=5, show=True,
                  allow_translate=True):
@@ -716,11 +716,11 @@ class LinePoint(_DependentPoint):
 
     @Point.canvas_coords.setter
     def canvas_coords(self, center_coords):
-        super(LinePoint, type(self)).canvas_coords.fset(self, center_coords)
+        super(_LinePoint, type(self)).canvas_coords.fset(self, center_coords)
         self.master.update_coords()
 
 
-class MasterSliderPoint(LinePoint):
+class _MasterSliderPoint(_LinePoint):
 
     def __init__(self, slider, v, color='blue', size=5, show=True,
                  allow_translate=True):
@@ -731,18 +731,18 @@ class MasterSliderPoint(LinePoint):
     def _get_init_coords(self):
         return self.master.anchor.get_coords_by_v(self.v)
 
-    @LinePoint.canvas_coords.setter
+    @_LinePoint.canvas_coords.setter
     def canvas_coords(self, center_coords):
         center_coords_ = self.master.anchor.find_closest_point(center_coords)
         self.v = self.master.anchor.get_v(center_coords_)
-        super(MasterSliderPoint, type(self)).canvas_coords.fset(self, center_coords_)
+        super(_MasterSliderPoint, type(self)).canvas_coords.fset(self, center_coords_)
 
     def update_coords(self):
         # when line changes, to keep v
         self.canvas_coords = self.master.anchor.get_coords_by_v(self.v)
 
 
-class SlaveSliderPoint(LinePoint):
+class _SlaveSliderPoint(_LinePoint):
 
     def __init__(self, slider, t, color='blue', size=5, show=True):
         super().__init__(slider, None, color=color, size=size, show=show,
@@ -775,7 +775,7 @@ class SlaveSliderPoint(LinePoint):
         if not np.allclose(center_coords, self.canvas_coords):
             raise Exception('Invalid center coords.')
 
-        super(LinePoint, type(self)).canvas_coords.fset(self, center_coords)
+        super(_LinePoint, type(self)).canvas_coords.fset(self, center_coords)
 
 
 class _AbstractLine(_CompositeBaseObject, metaclass=ABCMeta):
@@ -974,8 +974,8 @@ class Line(_AbstractLine):
                  text='', show=True, allow_translate=True, allow_delete=True,
                  allow_edit=True):
 
-        points = [LinePoint(self, coords_, color=color, size=small_size, show=show,
-                            allow_translate=allow_translate)
+        points = [_LinePoint(self, coords_, color=color, size=small_size, show=show,
+                             allow_translate=allow_translate)
                   for coords_ in coords]
         points[0]._size = size
 
@@ -988,9 +988,9 @@ class Line(_AbstractLine):
         self.popup_menu = LinePopupMenu(self)
 
     def add_point(self, coords, pos=None):
-        point = LinePoint(self, self.canvas.map2real(coords), color=self.color,
-                          size=self.small_size,
-                          show=self.show, allow_translate=self.allow_translate)
+        point = _LinePoint(self, self.canvas.map2real(coords), color=self.color,
+                           size=self.small_size,
+                           show=self.show, allow_translate=self.allow_translate)
         point.create_widget(self.canvas)
 
         if pos not in ['begin', 'end']:
@@ -1030,15 +1030,15 @@ class Slider(_AbstractLine):
         self.anchor = anchor
         self.anchor.add_slider(self)
 
-        self.master_pts = [MasterSliderPoint(self, v_init, color=color, size=size,
-                                             show=show),
-                           MasterSliderPoint(self, v_end, color=color,
-                                             size=small_size, show=show)]
+        self.master_pts = [_MasterSliderPoint(self, v_init, color=color, size=size,
+                                              show=show),
+                           _MasterSliderPoint(self, v_end, color=color,
+                                              size=small_size, show=show)]
 
         points = [self.master_pts[0]]
         for t in self._get_ts(n_points):
-            points.append(SlaveSliderPoint(self, t, color=color,
-                                           size=small_size, show=show))
+            points.append(_SlaveSliderPoint(self, t, color=color,
+                                            size=small_size, show=show))
         points.append(self.master_pts[1])
 
         super().__init__(name, points, width=width, size=size,
@@ -1071,8 +1071,8 @@ class Slider(_AbstractLine):
         ts = self._get_ts(n_points)
         if len(ts) > previous_n - 2:
             for t in ts[previous_n - 2:]:
-                new_point = SlaveSliderPoint(self, t, color=self.color,
-                                             size=self.small_size, show=self.show)
+                new_point = _SlaveSliderPoint(self, t, color=self.color,
+                                              size=self.small_size, show=self.show)
                 new_point.create_widget(self.canvas)
                 self.points.insert(-1, new_point)
 
