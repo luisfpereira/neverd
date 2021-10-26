@@ -1,6 +1,5 @@
 
 from abc import ABCMeta
-from abc import abstractmethod
 import tkinter as tk
 from tkinter import ttk
 
@@ -43,13 +42,14 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         frame = EntryFrame(self.holder, 'name')
         return frame, {'name': frame}
 
-    def _config_coords(self):
-        frame = CoordsFrame(self.holder)
-        return frame, {'coords': frame}
+    def _config_coords(self, name='coords', label='coords'):
+        frame = CoordsFrame(self.holder, label_text=label)
+        return frame, {name: frame}
 
     def _config_color(self):
         frame = ComboFrame(self.holder, 'color', default='blue',
-                           values=['blue', 'red', 'green', 'yellow'])
+                           values=['blue', 'red', 'green', 'yellow',
+                                   'black', 'white'])
         return frame, {'color': frame}
 
     def _config_size(self):
@@ -72,21 +72,27 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         frame = SpinFrame(self.holder, 'width', default=1)
         return frame, {'width': frame}
 
-    def _config_allow(self):
+    def _config_allow(self, allow_edit=True, allow_translate=True,
+                      allow_delete=True):
         container_frame = ttk.Frame(self.holder)
+        frame_dict = {}
 
-        translate_frame = BoolFrame(container_frame, 'allow_translate')
-        translate_frame.pack(side='left', fill='both', expand=True)
+        if allow_translate:
+            translate_frame = BoolFrame(container_frame, 'allow_translate')
+            translate_frame.pack(side='left', fill='both', expand=True)
+            frame_dict['allow_translate'] = translate_frame
 
-        edit_frame = BoolFrame(container_frame, 'allow edit')
-        edit_frame.pack(side='left', fill='both', expand=True)
+        if allow_edit:
+            edit_frame = BoolFrame(container_frame, 'allow edit')
+            edit_frame.pack(side='left', fill='both', expand=True)
+            frame_dict['allow_edit'] = edit_frame
 
-        delete_frame = BoolFrame(container_frame, 'allow delete')
-        delete_frame.pack(side='left', fill='both', expand=True)
+        if allow_delete:
+            delete_frame = BoolFrame(container_frame, 'allow delete')
+            delete_frame.pack(side='left', fill='both', expand=True)
+            frame_dict['allow_delete'] = delete_frame
 
-        return container_frame, {'allow_translate': translate_frame,
-                                 'allow_delete': delete_frame,
-                                 'allow_edit': edit_frame}
+        return container_frame, frame_dict
 
     def _config_text(self):
         frame = EntryFrame(self.holder, 'text')
@@ -105,7 +111,6 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         frame = SpinFrame(self.holder, 'number of points', default=2, from_=2)
         return frame, {'n_points': frame}
 
-    @abstractmethod
     def on_add(self, *args):
         pass
 
@@ -164,7 +169,7 @@ class LineForm(_BaseForm):
 
     def _set_default_coords(self):
         coords_frame = self._get_coords_frame()
-        coords_frame.set([[0., 0.], [0., 0.]])
+        coords_frame.set([[0., 0.], [1., 1.]])
 
     def _config_coords_bindings(self):
         n_points_frame = self._get_n_points_frame()
@@ -183,6 +188,7 @@ class LineForm(_BaseForm):
 
     def on_add(self, *args):
         data = self.get()
+        del data['n_points']
         line = canvas_objects.Line(**data)
         self.canvas.add_object(line)
         self.destroy()
@@ -269,6 +275,56 @@ class SliderForm(_BaseForm):
         super().set(values)
 
 
+class CalibrationRectangleForm(_BaseForm):
+
+    def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
+        frame_names = ['canvas_coords', 'coords', 'keep_real', 'color',
+                       'width', 'size', 'allow']
+
+        super().__init__(canvas, frame_names, *args, obj=obj,
+                         vert_space=vert_space, **kwargs)
+        title = 'Add calibration' if not self.edit else 'Edit calibration'
+        self.title(title)
+
+        if not self.edit:
+            self._set_default_coords()
+
+    def _get_coords_frame(self):
+        return self.info_container['coords']
+
+    def _get_canvas_coords_frame(self):
+        return self.info_container['canvas_coords']
+
+    def _config_coords(self):
+        frame = MultipleCoordsFrame(self.holder)
+        return frame, {'coords': frame}
+
+    def _config_canvas_coords(self):
+        frame = MultipleCoordsFrame(self.holder, label_text='canvas coords')
+        return frame, {'canvas_coords': frame}
+
+    def _config_keep_real(self):
+        frame = BoolFrame(self.holder, label_text='keep real')
+        return frame, {'keep_real': frame}
+
+    def _config_allow(self):
+        return super()._config_allow(allow_edit=True, allow_translate=True,
+                                     allow_delete=False)
+
+    def _set_default_coords(self):
+        coords_frame = self._get_coords_frame()
+        coords_frame.set([[-10., 10.], [10., -10.]])
+
+        canvas_coords_frame = self._get_canvas_coords_frame()
+        width, height = float(self.canvas['width']), float(self.canvas['height'])
+        canvas_coords_frame.set([[20., 20.], [width - 20, height - 20]])
+
+    def on_add(self, *args):
+        data = self.get()
+        self.canvas.calibrate(**data)
+        self.destroy()
+
+
 class _LabeledFrame(ttk.Frame):
 
     def __init__(self, holder, label_text):
@@ -286,6 +342,7 @@ class _LabeledFrame(ttk.Frame):
 
 
 class EntryFrame(_LabeledFrame):
+    # TODO: add validation (e.g. non-empty)
 
     def __init__(self, holder, label_text, default=''):
         super().__init__(holder, label_text)
@@ -389,7 +446,8 @@ class MultipleCoordsFrame(_LabeledFrame):
 OBJ2FORM = {
     'Point': PointForm,
     'Line': LineForm,
-    'Slider': SliderForm
+    'Slider': SliderForm,
+    'CalibrationRectangle': CalibrationRectangleForm,
 
 
 }

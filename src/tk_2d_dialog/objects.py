@@ -14,42 +14,38 @@ ATOL = 1e-6
 
 
 class Canvas(tk.Canvas):
+    # TODO: call it GeometricCanvas or Dialog2D (better name?)?
     type = 'Canvas'
 
-    def __init__(self, holder, calibration, image=None, width=800,
-                 height=800, **canvas_kwargs):
+    def __init__(self, holder, width=800, height=800, **canvas_kwargs):
         super().__init__(holder, width=width, height=height, **canvas_kwargs)
-        self.calibration = calibration
-        self.image = image or _NoneWidget(show=True)
-        self.objects = {}
+        self.objects = {}  # TODO: why need for dict here?
+
+        self.calibration_rectangle = None
+        self.image = None
+
         self.popup_menu = CanvasPopupMenu(self)
 
-        # TODO: create calibration and image widgets
+    @property
+    def calibrated(self):
+        return self.calibration_rectangle is not None
+
+    def has_image(self):
+        return self.image is not None
 
     def map2real(self, coords):
-        canvas_diff, real_diff = self.calibration.pt_bottom_right - self.calibration.pt_top_left
-        u = (coords[0] - self.calibration.pt_top_left.canvas[0]) / canvas_diff[0]
-        v = (coords[1] - self.calibration.pt_top_left.canvas[1]) / canvas_diff[1]
-
-        x_real = real_diff[0] * u + self.calibration.pt_top_left.real[0]
-        y_real = -abs(real_diff[1]) * v + self.calibration.pt_top_left.real[1]
-
-        return x_real, y_real
+        return self.calibration_rectangle.map2real(coords)
 
     def map2canvas(self, coords):
-        canvas_diff, real_diff = self.calibration.pt_bottom_right - self.calibration.pt_top_left
-        u = (coords[0] - self.calibration.pt_top_left.real[0]) / abs(real_diff[0])
-        v = (self.calibration.pt_top_left.real[1] - coords[1]) / abs(real_diff[1])
-
-        x_canvas = canvas_diff[0] * u + self.calibration.pt_top_left.canvas[0]
-        y_canvas = canvas_diff[1] * v + self.calibration.pt_top_left.canvas[1]
-
-        return x_canvas, y_canvas
+        return self.calibration_rectangle.map2canvas(coords)
 
     def get_by_type(self, obj_type):
         return [obj for obj in self.objects.values() if obj.type == obj_type]
 
     def add_object(self, obj):
+        if not self.calibrated:
+            raise Exception('Cannot add objects before calibration')
+
         item_id = obj.create_widget(self)
 
         self.objects[item_id] = obj
@@ -62,11 +58,40 @@ class Canvas(tk.Canvas):
         obj.destroy()
         del self.objects[id]
 
+    def show_all(self):
+        for obj in self.objects.values():
+            obj.show()
 
-class _BaseWidget(metaclass=ABCMeta):
+    def hide_all(self):
+        for obj in self.objects.values():
+            obj.hide()
 
-    def __init__(self, show):
+    def calibrate(self, canvas_coords, coords, keep_real=False, width=2,
+                  size=8, color='black', allow_translate=True, allow_edit=True):
+        self.calibration_rectangle = _CalibrationRectangle(
+            canvas_coords, coords, keep_real=keep_real, width=width,
+            size=size, color=color, allow_translate=allow_translate,
+            allow_edit=allow_edit)
+
+        self.calibration_rectangle.create_widget(self)
+
+    def add_image(self):
+        # TODO
+        pass
+
+
+class _BaseCanvasObject(metaclass=ABCMeta):
+
+    def __init__(self, name, text, color, show, allow_translate, allow_delete,
+                 allow_edit):
+        self.name = name
+        self.text = text
         self._show = show
+        self._allow_translate = allow_translate
+        self._allow_delete = allow_delete
+        self._allow_edit = allow_edit
+        self._color = color
+
         self._id = None
 
     @property
@@ -81,39 +106,11 @@ class _BaseWidget(metaclass=ABCMeta):
         self._id = value
         self._on_widget_creation()
 
-    def _on_widget_creation(self):
-        pass
-
-    def hide(self):
-        self._show = False
-        self.canvas.itemconfigure(self.id, state='hidden')
-
-    def show(self):
-        self._show = True
-        self.canvas.itemconfigure(self.id, state='normal')
-
     def create_widget(self, canvas):
         self._set_canvas(canvas)
 
     def _set_canvas(self, canvas):
         self.canvas = canvas
-
-
-class _NoneWidget(_BaseWidget):
-    pass
-
-
-class _BaseObject(_BaseWidget, metaclass=ABCMeta):
-
-    def __init__(self, name, text, color, show, allow_translate, allow_delete,
-                 allow_edit):
-        super().__init__(show)
-        self.name = name
-        self.text = text
-        self._allow_translate = allow_translate
-        self._allow_delete = allow_delete
-        self._allow_edit = allow_edit
-        self._color = color
 
     @property
     def color(self):
@@ -160,7 +157,16 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
         else:
             self.unbind_edit()
 
+    def hide(self):
+        self._show = False
+        self.canvas.itemconfigure(self.id, state='hidden')
+
+    def show(self):
+        self._show = True
+        self.canvas.itemconfigure(self.id, state='normal')
+
     def show_text(self):
+        # TODO
         pass
 
     def bind_translate(self):
@@ -198,7 +204,6 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
         self.canvas_coords = self._click_coords + self._get_delta_mov(event)
 
     def on_config_delta_mov(self, event):
-        # TODO: update to be more general
         self._click_mouse_coords = event.x, event.y
         self._click_coords = self.canvas_coords
 
@@ -233,7 +238,7 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
         return data
 
     def update(self, name=None, text=None, color=None, allow_translate=None,
-               allow_delete=None, allow_edit=None):
+               allow_delete=None, allow_edit=None, **kwargs):
         if name is not None:
             self.name = name
 
@@ -253,31 +258,224 @@ class _BaseObject(_BaseWidget, metaclass=ABCMeta):
             self.allow_edit = allow_edit
 
 
-class CalibrationPoint:
-    # TODO: abstract to Point
+class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
 
-    def __init__(self, canvas, real):
+    def __init__(self, *args, width=1, size=4, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._size = size
+        self._width = width
+
+    @property
+    def coords(self):
+        return np.array([point.coords for point in self.points])
+
+    @coords.setter
+    def coords(self, values):
+        for point, new_coords in zip(self.points, values):
+            point.coords = new_coords
+
+    @property
+    def canvas_coords(self):
+        return np.array([point.canvas_coords for point in self.points])
+
+    @canvas_coords.setter
+    def canvas_coords(self, values):
+        for point, new_coords in zip(self.points, values):
+            point.canvas_coords = new_coords
+
+    @property
+    def width(self):
+        return self._width
+
+    @width.setter
+    def width(self, value):
+        self._width = value
+        self.canvas.itemconfigure(self.id, width=value)
+
+    @_BaseCanvasObject.color.setter
+    def color(self, value):
+        super(_CompositeBaseObject, type(self)).color.fset(self, value)
+
+        for point in self.points:
+            point.color = self.color
+
+    @property
+    def size(self):
+        return self._size
+
+    @size.setter
+    def size(self, value):
+        for point in self.points:
+            point.size = value
+
+    def show(self):
+        super().show()
+        for point in self.points:
+            point.show()
+
+    def hide(self):
+        super().hide()
+        for point in self.points:
+            point.hide()
+
+    def destroy(self):
+        super().destroy()
+        for point in self.points:
+            point.destroy()
+
+    def _create_points(self, canvas):
+        for point in self.points:
+            point.create_widget(canvas)
+
+    def update(self, name=None, coords=None, color=None, width=None, size=None,
+               small_size=None, text=None, allow_translate=None, allow_delete=None,
+               allow_edit=None, **kwargs):
+        super().update(name=name, text=text, color=color,
+                       allow_translate=allow_translate,
+                       allow_delete=allow_delete, allow_edit=allow_edit)
+
+        if width is not None:
+            self.width = width
+
+        if size is not None:
+            self.size = size
+
+        if coords is not None:
+            self.coords = coords
+
+    def as_dict(self):
+        data = super().as_dict()
+        data.update(
+            {'coords': list(self.coords),
+             'width': self.width,
+             'size': self.size})
+
+        return data
+
+
+class _CalibrationRectangle(_CompositeBaseObject):
+    type = 'CalibrationRectangle'
+
+    def __init__(self, canvas_coords, coords, width=2, size=8,
+                 color='black', show=True, keep_real=False, allow_translate=True,
+                 allow_edit=True):
+        super().__init__(None, None, color, show, width=width, size=size,
+                         allow_translate=allow_translate, allow_delete=False,
+                         allow_edit=allow_edit)
+        self._pt1 = _MasterCalibrationPoint(self, canvas_coords[0], coords[0],
+                                            color=color, size=size)
+        self._pt2 = _MasterCalibrationPoint(self, canvas_coords[1], coords[1],
+                                            color=color, size=size)
+        self.keep_real = keep_real
+        self._min_dist = 2
+
+    @_CompositeBaseObject.color.setter
+    def color(self, value):
+        self._color = value
+        self.canvas.itemconfigure(self.id, outline=value)
+        for point in self.points:
+            point.color = value
+
+    @property
+    def points(self):
+        return [self._pt1, self._pt2]
+
+    def create_widget(self, canvas):
         self.canvas = canvas
-        self.real = real
 
-    def __sub__(self, other):
-        canvas_diff = tuple(self.canvas[i] - other.canvas[i] for i in range(2))
-        real_diff = tuple(self.real[i] - other.real[i] for i in range(2))
+        # create rectangle
+        pt_top_left, pt_bottom_right = self._get_corners()
+        self.id = self.canvas.create_rectangle(*pt_top_left.canvas_coords,
+                                               *pt_bottom_right.canvas_coords,
+                                               outline=self.color,
+                                               width=self.width)
+        # create points
+        self._create_points(canvas)
 
-        return canvas_diff, real_diff
+    def _get_corners(self):
+        # alternative is to modify mapping functions
+        pt1_position = self._pt1.position
+        pt2_position = self._pt2.position
+
+        if pt1_position == 'top_left' and pt2_position == 'bottom_right':
+            return self._pt1, self._pt2
+        elif pt1_position == 'bottom_right' and pt2_position == 'top_left':
+            return self._pt2, self._pt1
+        elif (pt1_position == 'bottom_left' and pt2_position == 'top_right') or pt1_position == 'top_right' and pt2_position == 'bottom_left':
+            if (pt1_position == 'bottom_left' and pt2_position == 'top_right'):
+                pt_bottom_left, pt_top_right = self._pt1, self._pt2
+            else:
+                pt_bottom_left, pt_top_right = self._pt2, self._pt1
+
+            # pt top left
+            canvas_coords = (pt_bottom_left.canvas_coords[0],
+                             pt_top_right.canvas_coords[1])
+            coords = (pt_bottom_left.coords[0],
+                      pt_top_right.coords[1])
+            pt_top_left = _CalibrationPoint(canvas_coords, coords)
+
+            # pt bottom right
+            canvas_coords = (pt_top_right.canvas_coords[0],
+                             pt_bottom_left.canvas_coords[1])
+            coords = (pt_top_right.coords[0],
+                      pt_bottom_left.coords[1])
+            pt_bottom_right = _CalibrationPoint(canvas_coords, coords)
+
+            return pt_top_left, pt_bottom_right
+
+    def map2real(self, coords):
+        pt_top_left, pt_bottom_right = self._get_corners()
+
+        canvas_diff, real_diff = pt_bottom_right - pt_top_left
+        u = (coords - pt_top_left.canvas_coords) / canvas_diff
+
+        return real_diff * u * np.array([1, 1]) + pt_top_left.coords
+
+    def map2canvas(self, coords):
+        pt_top_left, pt_bottom_right = self._get_corners()
+
+        canvas_diff, real_diff = pt_bottom_right - pt_top_left
+        u = (coords - pt_top_left.coords) / real_diff
+
+        return canvas_diff * u + pt_top_left.canvas_coords
+
+    def update_coords(self):
+        # when master points are updated
+        pt_top_left, pt_bottom_right = self._get_corners()
+
+        self.canvas.coords(self.id, *pt_top_left.canvas_coords,
+                           *pt_bottom_right.canvas_coords)
+
+    def update(self, name=None, coords=None, canvas_coords=None, color=None,
+               width=None, size=None, keep_real=None,
+               allow_translate=None, allow_delete=None,
+               allow_edit=None, **kwargs):
+
+        if keep_real is not None:
+            self.keep_real = keep_real
+
+        super().update(name=name, coords=coords, color=color, width=width,
+                       size=size,
+                       allow_translate=allow_translate, allow_delete=allow_delete,
+                       allow_edit=allow_edit)
+
+        if canvas_coords is not None:
+            self.canvas_coords = np.array(canvas_coords)
+
+    def as_dict(self):
+        data = super().as_dict()
+        for key in ['name', 'text', 'allow_delete']:
+            del data[key]
+
+        data.update(
+            {'canvas_coords': [point.canvas_coords for point in self.points],
+             'keep_real': self.keep_real})
+
+        return data
 
 
-class Calibration(_BaseWidget):
-
-    def __init__(self, pt1, pt2, show=True):
-        super().__init__(show)
-        self._pt1 = pt1
-        self._pt2 = pt2
-        self.pt_top_left = pt1
-        self.pt_bottom_right = pt2
-
-
-class Image(_BaseWidget):
+class Image(_BaseCanvasObject):
+    # TODO
 
     def __init__(self, path, upper_left_corner=(0, 0), show=True):
         super().__init__(show)
@@ -285,7 +483,7 @@ class Image(_BaseWidget):
         self.upper_left_corner = upper_left_corner
 
 
-class Point(_BaseObject):
+class Point(_BaseCanvasObject):
     type = 'Point'
 
     def __init__(self, name, coords, color='blue', size=5, text='', show=True,
@@ -314,15 +512,24 @@ class Point(_BaseObject):
     def coords(self):
         return np.array(self.canvas.map2real(self.canvas_coords))
 
+    @coords.setter
+    def coords(self, values):
+        self.canvas_coords = self.canvas.map2canvas(np.array(values))
+
+    @coords.setter
+    def coords(self, coords):
+        self.canvas_coords = self.canvas.map2canvas(coords)
+
     @property
     def canvas_coords(self):
         x, y, *_ = self.canvas.coords(self.id)
-        return np.array([x + self.size, y + self.size])
+        return np.array([x, y]) + self.size
 
     @canvas_coords.setter
     def canvas_coords(self, center_coords):
-        x, y = center_coords[0] - self.size, center_coords[1] - self.size
-        self.canvas.moveto(self.id, x, y)
+        x1, y1 = center_coords - self.size
+        x2, y2 = center_coords + self.size
+        self.canvas.coords(self.id, [x1, y1, x2, y2])
 
     def _get_rect_corners(self, coords):
         # in canvas coordinates
@@ -348,7 +555,8 @@ class Point(_BaseObject):
         return self.id
 
     def update(self, name=None, coords=None, color=None, size=None, text=None,
-               allow_translate=None, allow_delete=None, allow_edit=None):
+               allow_translate=None, allow_delete=None, allow_edit=None,
+               **kwargs):
         super().update(name, text, color, allow_translate, allow_delete,
                        allow_edit)
 
@@ -356,7 +564,7 @@ class Point(_BaseObject):
             self.size = size
 
         if coords is not None:
-            self.canvas_coords = self.canvas.map2canvas(coords)
+            self.coords = coords
 
     def as_dict(self):
         data = super().as_dict()
@@ -367,17 +575,15 @@ class Point(_BaseObject):
         return data
 
 
-class LinePoint(Point):
+class _DependentPoint(Point, metaclass=ABCMeta):
 
-    def __init__(self, line, coords, color='blue', size=5, show=True,
-                 allow_translate=True):
-        super().__init__(None, coords, color=color, size=size, text='',
-                         show=show, allow_translate=allow_translate)
-        self.line = line
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.master = master
 
     @property
     def popup_menu(self):
-        return self.line.popup_menu
+        return self.master.popup_menu
 
     def _create_popup_menu(self):
         # uses line menu
@@ -386,9 +592,124 @@ class LinePoint(Point):
     def _destroy_popup_menu(self):
         pass
 
+
+class _CalibrationPoint:
+
+    def __init__(self, canvas_coords, coords):
+        self._canvas_coords = np.array(canvas_coords)
+        self._coords = np.array(coords)
+
+    def __sub__(self, other):
+        canvas_diff = self.canvas_coords - other.canvas_coords
+        real_diff = self.coords - other.coords
+
+        return canvas_diff, real_diff
+
+    @property
+    def canvas_coords(self):
+        return self._canvas_coords
+
+    @property
+    def coords(self):
+        return self._coords
+
+
+class _MasterCalibrationPoint(_DependentPoint, _CalibrationPoint):
+
+    def __init__(self, calibration_rectangle, canvas_coords, coords,
+                 keep_real=False, color='green', size=5, show=True):
+        _DependentPoint.__init__(self, calibration_rectangle, None, None,
+                                 color=color, size=size, show=show)
+        _CalibrationPoint.__init__(self, canvas_coords, coords)
+
+    def __sub__(self, other):
+        return _CalibrationPoint.__sub__(self, other)
+
+    @property
+    def coords(self):
+        return self._coords
+
+    @coords.setter
+    def coords(self, center_coords):
+
+        # collect previous coords
+        if self.master.keep_real:
+            previous_coords = self._collect_previous_obj_coords()
+
+        # update calibration
+        self._coords = np.array(center_coords)
+
+        # update coords
+        if self.master.keep_real:
+            self._update_obj_coords(previous_coords)
+
+    @property
+    def canvas_coords(self):
+        return self._canvas_coords
+
+    @canvas_coords.setter
+    def canvas_coords(self, center_coords):
+        pt1, pt2 = self.master.points
+        other = pt2 if self is pt1 else pt1
+        diff = np.abs(center_coords - other.canvas_coords)
+        if np.any(diff < self.master._min_dist):
+            return
+
+        # collect previous coords
+        if self.master.keep_real:
+            previous_coords = self._collect_previous_obj_coords()
+
+        # update calibration
+        self._canvas_coords = np.array(center_coords)
+        Point.canvas_coords.__set__(self, center_coords)
+        self.master.update_coords()
+
+        # update coords
+        if self.master.keep_real:
+            self._update_obj_coords(previous_coords)
+
+    def _get_init_coords(self):
+        return self._canvas_coords
+
+    def _collect_previous_obj_coords(self):
+        coords = []
+        for obj in self.canvas.objects.values():  # assumes dict is ordered
+            coords.append(obj.coords)
+
+        return coords
+
+    def _update_obj_coords(self, coords):
+        for obj, coords in zip(self.canvas.objects.values(), coords):
+            obj.update(coords=coords)
+
+    @property
+    def position(self):
+        pt1, pt2 = self.master.points
+        other = pt2 if self is pt1 else pt1
+
+        if self.canvas_coords[0] < other.canvas_coords[0]:
+            if self.canvas_coords[1] < other.canvas_coords[1]:
+                return 'top_left'
+            else:
+                return 'bottom_left'
+
+        else:
+            if self.canvas_coords[1] < other.canvas_coords[1]:
+                return 'top_right'
+            else:
+                return 'bottom_right'
+
+
+class LinePoint(_DependentPoint):
+
+    def __init__(self, line, coords, color='blue', size=5, show=True,
+                 allow_translate=True):
+        super().__init__(line, None, coords, color=color, size=size, text='',
+                         show=show, allow_translate=allow_translate)
+
     @property
     def canvas(self):
-        return self.line.canvas
+        return self.master.canvas
 
     def _set_canvas(self, *args):
         pass
@@ -396,7 +717,7 @@ class LinePoint(Point):
     @Point.canvas_coords.setter
     def canvas_coords(self, center_coords):
         super(LinePoint, type(self)).canvas_coords.fset(self, center_coords)
-        self.line.update_coords()
+        self.master.update_coords()
 
 
 class MasterSliderPoint(LinePoint):
@@ -408,17 +729,17 @@ class MasterSliderPoint(LinePoint):
         self.v = v
 
     def _get_init_coords(self):
-        return self.line.anchor.get_coords_by_v(self.v)
+        return self.master.anchor.get_coords_by_v(self.v)
 
     @LinePoint.canvas_coords.setter
     def canvas_coords(self, center_coords):
-        center_coords_ = self.line.anchor.find_closest_point(center_coords)
-        self.v = self.line.anchor.get_v(center_coords_)
+        center_coords_ = self.master.anchor.find_closest_point(center_coords)
+        self.v = self.master.anchor.get_v(center_coords_)
         super(MasterSliderPoint, type(self)).canvas_coords.fset(self, center_coords_)
 
     def update_coords(self):
         # when line changes, to keep v
-        self.canvas_coords = self.line.anchor.get_coords_by_v(self.v)
+        self.canvas_coords = self.master.anchor.get_coords_by_v(self.v)
 
 
 class SlaveSliderPoint(LinePoint):
@@ -429,7 +750,7 @@ class SlaveSliderPoint(LinePoint):
         self._t = t
 
     def _get_init_coords(self):
-        return self.line.anchor.get_coords_by_v(self.v)
+        return self.master.anchor.get_coords_by_v(self.v)
 
     @property
     def t(self):
@@ -439,15 +760,15 @@ class SlaveSliderPoint(LinePoint):
     def t(self, value):
         self._t = value
         self.canvas_coords = self.canvas_coords  # beautiful
-        self.line.update_coords()
+        self.master.update_coords()
 
     @property
     def v(self):
-        return self.line.master_pts[0].v + self.t * (self.line.master_pts[1].v - self.line.master_pts[0].v)
+        return self.master.master_pts[0].v + self.t * (self.master.master_pts[1].v - self.master.master_pts[0].v)
 
     @property
     def canvas_coords(self):
-        return self.line.anchor.get_coords_by_v(self.v)
+        return self.master.anchor.get_coords_by_v(self.v)
 
     @canvas_coords.setter
     def canvas_coords(self, center_coords):
@@ -457,61 +778,25 @@ class SlaveSliderPoint(LinePoint):
         super(LinePoint, type(self)).canvas_coords.fset(self, center_coords)
 
 
-class _AbstractLine(_BaseObject, metaclass=ABCMeta):
+class _AbstractLine(_CompositeBaseObject, metaclass=ABCMeta):
 
     def __init__(self, name, points, width=1, size=5, small_size=3, color='red',
                  text='', show=True, allow_translate=True, allow_delete=True,
                  allow_edit=True):
         super().__init__(name, text, color, show, allow_translate, allow_delete,
-                         allow_edit=allow_edit)
+                         allow_edit=allow_edit, width=width, size=size)
         self.points = points
-        self._width = width
         self.sliders = []
-        self._size = size  # sizes are useless until they're set
-        self._small_size = small_size
+        self._small_size = small_size  # sizes are useless until they're set
 
-    @_BaseObject.allow_translate.setter
+    @_CompositeBaseObject.allow_translate.setter
     def allow_translate(self, value):
         super(_AbstractLine, type(self)).allow_translate.fset(self, value)
 
         for slider in self.sliders:
             slider.allow_translate = value
 
-    @property
-    def coords(self):
-        return np.array([point.coords for point in self.points])
-
-    @property
-    def canvas_coords(self):
-        coords = self.canvas.coords(self.id)
-        return np.array([(c1, c2) for c1, c2 in zip(coords[::2], coords[1::2])])
-
-    @canvas_coords.setter
-    def canvas_coords(self, new_coords):
-        for point, new_coords_ in zip(self.points, new_coords):
-            point.canvas_coords = new_coords_
-
-    @property
-    def width(self):
-        return self._width
-
-    @width.setter
-    def width(self, value):
-        self._width = value
-        self.canvas.itemconfigure(self.id, width=value)
-
-    @_BaseObject.color.setter
-    def color(self, value):
-        super(_AbstractLine, type(self)).color.fset(self, value)
-
-        for point in self.points:
-            point.color = self.color
-
-    @property
-    def size(self):
-        return self._size
-
-    @size.setter
+    @_CompositeBaseObject.size.setter
     def size(self, value):
         self._size = value
         self.points[0].size = value
@@ -535,32 +820,22 @@ class _AbstractLine(_BaseObject, metaclass=ABCMeta):
             flatten_list(coords), fill=self.color, width=self.width)
 
         # create points (order matters for bindings)
-        for point in self.points:
-            point.create_widget(canvas)
+        self._create_points(canvas)
 
         return self.id
 
     def show(self):
         super().show()
-        for point in self.points:
-            point.show()
-
         for slider in self.sliders:
             slider.show(from_anchor=True)
 
     def hide(self):
         super().hide()
-        for point in self.points:
-            point.hide()
-
         for slider in self.sliders:
             slider.hide(from_anchor=True)
 
     def destroy(self):
         super().destroy()
-        for point in self.points:
-            point.destroy()
-
         for slider in self.sliders.copy():
             slider.destroy()
 
@@ -676,30 +951,18 @@ class _AbstractLine(_BaseObject, metaclass=ABCMeta):
 
     def update(self, name=None, coords=None, color=None, width=None, size=None,
                small_size=None, text=None, allow_translate=None, allow_delete=None,
-               allow_edit=None):
-        super().update(name, text, color, allow_translate, allow_delete,
-                       allow_edit)
-
-        if width is not None:
-            self.width = width
-
-        if size is not None:
-            self.size = size
+               allow_edit=None, **kwargs):
+        super().update(name=name, coords=coords, text=text, color=color,
+                       width=width, size=size,
+                       allow_translate=allow_translate, allow_delete=allow_delete,
+                       allow_edit=allow_edit)
 
         if small_size is not None:
             self.small_size = small_size
 
-        if coords is not None:
-            self.canvas_coords = [self.canvas.map2canvas(coords_) for coords_ in coords]
-
     def as_dict(self):
         data = super().as_dict()
-        data.update(
-            {'coords': list(self.coords),
-             'width': self.width,
-             'size': self.size,
-             'small_size': self.small_size
-             })
+        data['small_size'] = self.small_size
 
         return data
 
@@ -786,11 +1049,11 @@ class Slider(_AbstractLine):
     def _get_ts(self, n_points):
         return [(i + 1) / (n_points - 1) for i in range(n_points - 2)]
 
-    @ property
+    @property
     def n_points(self):
         return len(self.points)
 
-    @ n_points.setter
+    @n_points.setter
     def n_points(self, n_points):
         if self.n_points == n_points or n_points < 3:
             return
@@ -820,19 +1083,19 @@ class Slider(_AbstractLine):
         else:
             self.update_coords()  # guarantees update of line coords
 
-    @ property
+    @property
     def v_init(self):
         return self.master_pts[0].v
 
-    @ v_init.setter
+    @v_init.setter
     def v_init(self, value):
         self.master_pts[0].canvas_coords = self.anchor.get_coords_by_v(value)
 
-    @ property
+    @property
     def v_end(self):
         return self.master_pts[1].v
 
-    @ v_end.setter
+    @v_end.setter
     def v_end(self, value):
         self.master_pts[1].canvas_coords = self.anchor.get_coords_by_v(value)
 
@@ -878,7 +1141,8 @@ class Slider(_AbstractLine):
 
     def update(self, name=None, v_init=None, v_end=None, n_points=None,
                color=None, width=None, size=None, small_size=None, text=None,
-               allow_translate=None, allow_delete=None, allow_edit=None):
+               allow_translate=None, allow_delete=None, allow_edit=None,
+               **kwargs):
         super().update(name, None, color, width, size, small_size, text,
                        allow_translate, allow_delete, allow_edit)
 
