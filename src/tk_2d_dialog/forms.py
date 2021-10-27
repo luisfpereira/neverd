@@ -7,7 +7,11 @@ import tk_2d_dialog.objects as canvas_objects  # avoid circular import
 from tk_2d_dialog.generic_widgets import ScrollableFrame
 
 
+# TODO: improve defaults of line addition
+
+
 class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
+    # TODO: bring title here
 
     def __init__(self, canvas, frame_names, *args, obj=None,
                  vert_space=10, **kwargs):
@@ -43,7 +47,7 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         return frame, {'name': frame}
 
     def _config_coords(self, name='coords', label='coords'):
-        frame = CoordsFrame(self.holder, label_text=label)
+        frame = CoordsFrame(self.holder, label=label)
         return frame, {name: frame}
 
     def _config_color(self):
@@ -300,11 +304,11 @@ class CalibrationRectangleForm(_BaseForm):
         return frame, {'coords': frame}
 
     def _config_canvas_coords(self):
-        frame = MultipleCoordsFrame(self.holder, label_text='canvas coords')
+        frame = MultipleCoordsFrame(self.holder, label='canvas coords')
         return frame, {'canvas_coords': frame}
 
     def _config_keep_real(self):
-        frame = BoolFrame(self.holder, label_text='keep real')
+        frame = BoolFrame(self.holder, label='keep real')
         return frame, {'keep_real': frame}
 
     def _config_allow(self):
@@ -325,13 +329,56 @@ class CalibrationRectangleForm(_BaseForm):
         self.destroy()
 
 
+class CanvasImageForm(_BaseForm):
+
+    def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
+        frame_names = ['path', 'upper_left_corner', 'size']  # TODO: add size?
+        super().__init__(canvas, frame_names, *args, obj=obj,
+                         vert_space=vert_space, **kwargs)
+
+        title = 'Add image' if not self.edit else 'Edit image'
+        self.title(title)
+
+    def _config_path(self):
+        frame = EntryFrame(self.holder, 'path')
+        return frame, {'path': frame}
+
+    def _config_upper_left_corner(self):
+        return super()._config_coords(name='upper_left_corner',
+                                      label='upper left corner')
+
+    def _config_size(self, allow_edit=True, allow_translate=True,
+                     allow_delete=True):
+        container_frame = ttk.Frame(self.holder)
+
+        width_frame = EntryFrame(container_frame, 'width', default=300)
+        width_frame.pack(side='left', fill='both', expand=True)
+
+        height_frame = EntryFrame(container_frame, 'height', default=300)
+        height_frame.pack(side='left', fill='both', expand=True)
+
+        return container_frame, {'width': width_frame,
+                                 'height': height_frame}
+
+    def on_add(self, *args):
+        data = self.get()
+
+        # TODO: edit after using write entry
+        data['size'] = (int(data['width']), int(data['height']))
+        del data['width']
+        del data['height']
+
+        self.canvas.add_image(**data)
+        self.destroy()
+
+
 class _LabeledFrame(ttk.Frame):
 
-    def __init__(self, holder, label_text):
+    def __init__(self, holder, label):
         super().__init__(holder)
 
-        if label_text is not None:
-            label = ttk.Label(self, text=label_text)
+        if label is not None:
+            label = ttk.Label(self, text=label)
             label.pack()
 
     def get(self):
@@ -342,10 +389,11 @@ class _LabeledFrame(ttk.Frame):
 
 
 class EntryFrame(_LabeledFrame):
+    # TODO: add type
     # TODO: add validation (e.g. non-empty)
 
-    def __init__(self, holder, label_text, default=''):
-        super().__init__(holder, label_text)
+    def __init__(self, holder, label, default=''):
+        super().__init__(holder, label)
 
         self.tk_var = tk.StringVar()
         self.tk_var.set(default)
@@ -356,8 +404,8 @@ class EntryFrame(_LabeledFrame):
 
 class BoolFrame(_LabeledFrame):
 
-    def __init__(self, holder, label_text, default=True):
-        super().__init__(holder, label_text)
+    def __init__(self, holder, label, default=True):
+        super().__init__(holder, label)
 
         self.tk_var = tk.BooleanVar()
         self.tk_var.set(default)
@@ -367,8 +415,8 @@ class BoolFrame(_LabeledFrame):
 
 class ComboFrame(_LabeledFrame):
 
-    def __init__(self, holder, label_text, default, values):
-        super().__init__(holder, label_text)
+    def __init__(self, holder, label, default, values):
+        super().__init__(holder, label)
 
         self.tk_var = tk.StringVar()
         self.tk_var.set(default)
@@ -381,8 +429,8 @@ class ComboFrame(_LabeledFrame):
 
 class SpinFrame(_LabeledFrame):
 
-    def __init__(self, holder, label_text, default=5, from_=1, to=15):
-        super().__init__(holder, label_text)
+    def __init__(self, holder, label, default=5, from_=1, to=15):
+        super().__init__(holder, label)
 
         self.tk_var = tk.IntVar()
         self.tk_var.set(default)
@@ -394,8 +442,8 @@ class SpinFrame(_LabeledFrame):
 
 class CoordsFrame(_LabeledFrame):
 
-    def __init__(self, holder, label_text='coords', dim=2):
-        super().__init__(holder, label_text)
+    def __init__(self, holder, label='coords', dim=2):
+        super().__init__(holder, label)
         self.dim = dim
 
         self.tk_vars = [tk.DoubleVar() for _ in range(dim)]
@@ -415,8 +463,8 @@ class CoordsFrame(_LabeledFrame):
 
 class MultipleCoordsFrame(_LabeledFrame):
 
-    def __init__(self, holder, label_text='coords', dim=2, height=100):
-        super().__init__(holder, label_text)
+    def __init__(self, holder, label='coords', dim=2, height=100):
+        super().__init__(holder, label)
         self.dim = dim
         self.frames = []
 

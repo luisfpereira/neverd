@@ -1,3 +1,4 @@
+
 from abc import ABCMeta
 from abc import abstractmethod
 import tkinter as tk
@@ -7,6 +8,7 @@ from tk_2d_dialog.forms import PointForm
 from tk_2d_dialog.forms import LineForm
 from tk_2d_dialog.forms import SliderForm
 from tk_2d_dialog.forms import CalibrationRectangleForm
+from tk_2d_dialog.forms import CanvasImageForm
 
 
 class _BasePopupMenu(tk.Menu, metaclass=ABCMeta):
@@ -149,8 +151,7 @@ class CanvasPopupMenu(_BasePopupMenu):
         CalibrationRectangleForm(self.canvas)
 
     def on_add_image(self, *args):
-        # TODO
-        pass
+        CanvasImageForm(self.canvas)
 
 
 class ObjectPopupMenu(_BasePopupMenu):

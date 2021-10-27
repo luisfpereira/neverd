@@ -2,6 +2,8 @@ from abc import ABCMeta
 import tkinter as tk
 
 import numpy as np
+from PIL import ImageTk  # TODO: add PIL to dependencies
+from PIL import Image
 
 from tk_2d_dialog.popups import CanvasPopupMenu
 from tk_2d_dialog.popups import ObjectPopupMenu
@@ -13,8 +15,12 @@ from tk_2d_dialog.utils import flatten_list
 ATOL = 1e-6
 
 
+# TODO: add mouse position in real world coordinates at bottom (info bar?)
+
+
 class GeometricCanvas(tk.Canvas):
     type = 'GeometricCanvas'
+    # TODO: retrieve size
 
     def __init__(self, holder, width=800, height=800, **canvas_kwargs):
         super().__init__(holder, width=width, height=height, **canvas_kwargs)
@@ -66,17 +72,24 @@ class GeometricCanvas(tk.Canvas):
             obj.hide()
 
     def calibrate(self, canvas_coords, coords, keep_real=False, width=2,
-                  size=8, color='black', allow_translate=True, allow_edit=True):
+                  size=8, color='black', allow_translate=True, allow_edit=True,
+                  show=True):
         self.calibration_rectangle = _CalibrationRectangle(
             canvas_coords, coords, keep_real=keep_real, width=width,
             size=size, color=color, allow_translate=allow_translate,
-            allow_edit=allow_edit)
+            allow_edit=allow_edit, show=show)
 
         self.calibration_rectangle.create_widget(self)
 
-    def add_image(self):
-        # TODO
-        pass
+        if not self.calibration_rectangle._show:
+            self.calibration_rectangle.hide()
+
+    def add_image(self, path, upper_left_corner=(0, 0), size=None, show=True):
+        self.image = _CanvasImage(path=path, upper_left_corner=upper_left_corner,
+                                  show=show, size=size)
+
+        self.image.create_widget(self)
+        self.tag_lower(self.image.id)  # move image back
 
 
 class _BaseCanvasObject(metaclass=ABCMeta):
@@ -110,6 +123,15 @@ class _BaseCanvasObject(metaclass=ABCMeta):
 
     def _set_canvas(self, canvas):
         self.canvas = canvas
+
+    @property
+    def canvas_coords(self):
+        canvas_coords = self.canvas.coords(self.id)
+        return canvas_coords
+
+    @canvas_coords.setter
+    def canvas_coords(self, values):
+        self.canvas.coords(self.id, *values)
 
     @property
     def color(self):
@@ -354,6 +376,7 @@ class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
 
 
 class _CalibrationRectangle(_CompositeBaseObject):
+    # TODO: translate similar to Image?
     type = 'CalibrationRectangle'
 
     def __init__(self, canvas_coords, coords, width=2, size=8,
@@ -474,13 +497,163 @@ class _CalibrationRectangle(_CompositeBaseObject):
         return data
 
 
-class Image(_BaseCanvasObject):
-    # TODO: call canvas image?
+class _CanvasImage(_BaseCanvasObject):
+    type = 'CanvasImage'
 
-    def __init__(self, path, upper_left_corner=(0, 0), show=True):
-        super().__init__(show)
+    def __init__(self, path, upper_left_corner=(0, 0), size=None, show=True,
+                 allow_translate=True, allow_delete=True, allow_edit=True):
+        super().__init__(None, None, None, show=show, allow_translate=allow_translate,
+                         allow_delete=allow_delete, allow_edit=allow_edit)
         self.path = path
-        self.upper_left_corner = upper_left_corner
+        self._init_upper_left_corner = upper_left_corner
+        self._size = size
+
+        self._photo_image = None
+
+    def bind_translate(self):
+        self.canvas.tag_bind(self.id, '<Motion>', self.on_resize)
+
+        self.canvas.tag_bind(self.id, '<Control-1>', self.on_config_delta_mov)
+        self.canvas.tag_bind(self.id, '<Control-1>', self.on_update_cursor, add='+')
+        self.canvas.tag_bind(self.id, '<Control-B1-Motion>', self.on_translate)
+        self.canvas.tag_bind(self.id, '<ButtonRelease-1>', self.on_reset_cursor)
+
+    @property
+    def upper_left_corner(self):
+        return self.canvas_coords
+
+    @upper_left_corner.setter
+    def upper_left_corner(self, coords):
+        self.canvas_coords = coords
+
+    @property
+    def size(self):
+        return self._size
+
+    @size.setter
+    def size(self, value):
+        self._size = value
+        self._photo_image = self._get_photo_image()
+        self.canvas.itemconfig(self.id, image=self._photo_image)
+
+    def _get_photo_image(self):
+        self._image = self._original_image
+        if self.size is not None:
+            self._image = self._original_image.resize(self.size)
+
+        return ImageTk.PhotoImage(self._image)
+
+    def create_widget(self, canvas):
+        super().create_widget(canvas)
+
+        self._original_image = Image.open(self.path)
+
+        self._photo_image = self._get_photo_image()
+        self.id = self.canvas.create_image(*self._init_upper_left_corner,
+                                           image=self._photo_image, anchor='nw')
+
+    def _on_widget_creation(self):
+        self._config_bindings()
+
+    def on_enter(self, *args):
+        # TODO: delete?
+        pass
+
+    def on_leave(self, *args):
+        self._unbind_resize()
+
+    def on_update_cursor(self, *args):
+        self.canvas.config(cursor='fleur')
+
+    def on_reset_cursor(self, *args):
+        self.canvas.config(cursor='')
+
+    def _unbind_resize(self):
+        self.canvas.tag_unbind(self.id, '<B1-Motion>')
+        self.on_reset_cursor()
+
+    def on_resize(self, event):
+        tol = 2
+        x1, y1, x2, y2 = self.canvas.bbox(self.id)
+        x, y = event.x, event.y
+
+        # TODO: corners
+        on_bound = True
+        if self._is_left(x1, x, tol):
+            self.canvas.config(cursor='left_side')
+            self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_resize_left)
+
+        elif self._is_right(x2, x, tol):
+            self.canvas.config(cursor='right_side')
+            self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_resize_right)
+
+        elif self._is_top(y1, y, tol):
+            self.canvas.config(cursor='top_side')
+            self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_resize_top)
+
+        elif self._is_bottom(y2, y, tol):
+            self.canvas.config(cursor='bottom_side')
+            self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_resize_bottom)
+
+        else:
+            on_bound = False
+            self._unbind_resize()
+
+        if on_bound:
+            self.on_config_delta_mov(event)  # avoid resize bug
+            self.canvas.tag_bind(self.id, '<1>', self.on_config_delta_mov)
+
+    def _is_left(self, x1, x, tol):
+        return x1 - tol <= x <= x1 + tol
+
+    def _is_right(self, x2, x, tol):
+        return x2 - tol <= x <= x + tol
+
+    def _is_top(self, y1, y, tol):
+        return y1 - tol <= y <= y1 + tol
+
+    def _is_bottom(self, y2, y, tol):
+        return y2 - tol <= y <= y2 + tol
+
+    def _on_resize(self, delta):
+        previous_size = self._image.size
+        self.size = (previous_size[0] + delta[0], previous_size[1] + delta[1])
+
+    def on_resize_right(self, event):
+        delta = self._get_delta_mov(event)
+        self.on_config_delta_mov(event)
+
+        delta[1] = 0
+        self._on_resize(delta)
+
+    def on_resize_bottom(self, event):
+        delta = self._get_delta_mov(event)
+        self.on_config_delta_mov(event)
+
+        delta[0] = 0
+        self._on_resize(delta)
+
+    def on_resize_top(self, event):
+        delta = self._get_delta_mov(event)
+        self.on_config_delta_mov(event)
+
+        delta[0] = 0
+        delta[1] *= -1
+        self._on_resize(delta)
+
+        previous_coords = self.canvas_coords
+        self.canvas_coords = previous_coords[0], previous_coords[1] - delta[1]
+
+    def on_resize_left(self, event):
+        delta = self._get_delta_mov(event)
+        self.on_config_delta_mov(event)
+
+        delta[0] *= -1
+        delta[1] = 0
+        self._on_resize(delta)
+
+        previous_coords = self.canvas_coords
+        self.canvas_coords = previous_coords[0] - delta[0], previous_coords[1]
 
 
 class Point(_BaseCanvasObject):
