@@ -10,12 +10,15 @@ from tk_2d_dialog.popups import ObjectPopupMenu
 from tk_2d_dialog.popups import LinePopupMenu
 from tk_2d_dialog.popups import SliderPopupMenu
 from tk_2d_dialog.utils import flatten_list
+from tk_2d_dialog.utils import get_bound_position
+from tk_2d_dialog.utils import MAP_POS_TO_CURSOR_SYMBOL
 
 
 ATOL = 1e-6
 
 
 # TODO: add mouse position in real world coordinates at bottom (info bar?)
+# TODO: cross-platform bindings
 
 
 class GeometricCanvas(tk.Canvas):
@@ -499,6 +502,8 @@ class _CalibrationRectangle(_CompositeBaseObject):
 
 class _CanvasImage(_BaseCanvasObject):
     type = 'CanvasImage'
+    # TODO: keep ratio -> Ctrl-Motion
+    # TODO: enlarge from center -> Shift-Ctrl-Motion
 
     def __init__(self, path, upper_left_corner=(0, 0), size=None, show=True,
                  allow_translate=True, allow_delete=True, allow_edit=True):
@@ -511,10 +516,11 @@ class _CanvasImage(_BaseCanvasObject):
         self._photo_image = None
 
     def bind_translate(self):
-        self.canvas.tag_bind(self.id, '<Motion>', self.on_resize)
+        self.canvas.tag_bind(self.id, '<Motion>', self.on_config_resize)
 
         self.canvas.tag_bind(self.id, '<Control-1>', self.on_config_delta_mov)
-        self.canvas.tag_bind(self.id, '<Control-1>', self.on_update_cursor, add='+')
+        self.canvas.tag_bind(self.id, '<Control-1>',
+                             self.on_config_cursor_translate, add='+')
         self.canvas.tag_bind(self.id, '<Control-B1-Motion>', self.on_translate)
         self.canvas.tag_bind(self.id, '<ButtonRelease-1>', self.on_reset_cursor)
 
@@ -562,8 +568,12 @@ class _CanvasImage(_BaseCanvasObject):
     def on_leave(self, *args):
         self._unbind_resize()
 
-    def on_update_cursor(self, *args):
+    def on_config_cursor_translate(self, *args):
         self.canvas.config(cursor='fleur')
+
+    def _config_cursor_bound(self, position):
+        symbol = MAP_POS_TO_CURSOR_SYMBOL.get(position)
+        self.canvas.config(cursor=symbol)
 
     def on_reset_cursor(self, *args):
         self.canvas.config(cursor='')
@@ -572,88 +582,52 @@ class _CanvasImage(_BaseCanvasObject):
         self.canvas.tag_unbind(self.id, '<B1-Motion>')
         self.on_reset_cursor()
 
-    def on_resize(self, event):
-        tol = 2
-        x1, y1, x2, y2 = self.canvas.bbox(self.id)
-        x, y = event.x, event.y
+    def on_config_resize(self, event):
+        tol = 3
 
-        # TODO: corners
-        on_bound = True
-        if self._is_left(x1, x, tol):
-            self.canvas.config(cursor='left_side')
-            self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_resize_left)
-
-        elif self._is_right(x2, x, tol):
-            self.canvas.config(cursor='right_side')
-            self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_resize_right)
-
-        elif self._is_top(y1, y, tol):
-            self.canvas.config(cursor='top_side')
-            self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_resize_top)
-
-        elif self._is_bottom(y2, y, tol):
-            self.canvas.config(cursor='bottom_side')
-            self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_resize_bottom)
-
-        else:
-            on_bound = False
-            self._unbind_resize()
-
-        if on_bound:
+        position = get_bound_position(self.canvas, self.id, event.x, event.y,
+                                      tol=tol)
+        if position is not None:
             self.on_config_delta_mov(event)  # avoid resize bug
             self.canvas.tag_bind(self.id, '<1>', self.on_config_delta_mov)
+            self._config_cursor_bound(position)
 
-    def _is_left(self, x1, x, tol):
-        return x1 - tol <= x <= x1 + tol
+            self.canvas.tag_bind(self.id, '<B1-Motion>',
+                                 lambda event, pos=position: self._on_resize(event, pos))
 
-    def _is_right(self, x2, x, tol):
-        return x2 - tol <= x <= x + tol
+        else:
+            self._unbind_resize()
 
-    def _is_top(self, y1, y, tol):
-        return y1 - tol <= y <= y1 + tol
+    def _on_resize(self, event, position):
+        map_pos_to_zero_index = {'left': 1, 'right': 1, 'top': 0, 'bottom': 0}
 
-    def _is_bottom(self, y2, y, tol):
-        return y2 - tol <= y <= y2 + tol
+        delta = self._get_delta_mov(event)
+        index = map_pos_to_zero_index.get(position, None)
+        if index is not None:
+            delta[index] = 0
 
-    def _on_resize(self, delta):
+        if 'left' in position:
+            delta[0] *= -1
+
+        if 'top' in position:
+            delta[1] *= -1
+
         previous_size = self._image.size
         self.size = (previous_size[0] + delta[0], previous_size[1] + delta[1])
 
-    def on_resize_right(self, event):
-        delta = self._get_delta_mov(event)
         self.on_config_delta_mov(event)
 
-        delta[1] = 0
-        self._on_resize(delta)
+        if 'left' in position or 'top' in position:
+            pos_split = position.split('-')
+            if len(pos_split) > 1:
+                if pos_split[0] == 'top' and pos_split[1] != 'left':
+                    delta[0] = 0
+                elif pos_split[0] == 'bottom':
+                    delta[1] = 0
 
-    def on_resize_bottom(self, event):
-        delta = self._get_delta_mov(event)
-        self.on_config_delta_mov(event)
-
-        delta[0] = 0
-        self._on_resize(delta)
-
-    def on_resize_top(self, event):
-        delta = self._get_delta_mov(event)
-        self.on_config_delta_mov(event)
-
-        delta[0] = 0
-        delta[1] *= -1
-        self._on_resize(delta)
-
-        previous_coords = self.canvas_coords
-        self.canvas_coords = previous_coords[0], previous_coords[1] - delta[1]
-
-    def on_resize_left(self, event):
-        delta = self._get_delta_mov(event)
-        self.on_config_delta_mov(event)
-
-        delta[0] *= -1
-        delta[1] = 0
-        self._on_resize(delta)
-
-        previous_coords = self.canvas_coords
-        self.canvas_coords = previous_coords[0] - delta[0], previous_coords[1]
+            previous_coords = self.canvas_coords
+            self.canvas_coords = (previous_coords[0] - delta[0],
+                                  previous_coords[1] - delta[1])
 
 
 class Point(_BaseCanvasObject):
