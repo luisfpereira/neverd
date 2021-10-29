@@ -130,16 +130,19 @@ class CanvasPopupMenu(_BasePopupMenu):
             self._bind_item('Add image', self.on_add_image)
 
     def on_show_hide_cal(self, *args):
-        if self.canvas.calibration_rectangle._show:
-            self.canvas.calibration_rectangle.hide()
-        else:
+        hidden = self.canvas.is_hidden(self.canvas.calibration_rectangle.id)
+        if hidden:
             self.canvas.calibration_rectangle.show()
+        else:
+            self.canvas.calibration_rectangle.hide()
 
     def on_show_hide_img(self, *args):
-        if self.canvas.image._show:
-            self.canvas.image.hide()
-        else:
+        hidden = self.canvas.is_hidden(self.canvas.image.id)
+
+        if hidden:
             self.canvas.image.show()
+        else:
+            self.canvas.image.hide()
 
     def on_show_all(self, *args):
         self.canvas.show_all()

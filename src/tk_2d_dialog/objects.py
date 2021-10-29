@@ -27,7 +27,7 @@ class GeometricCanvas(tk.Canvas):
 
     def __init__(self, holder, width=800, height=800, **canvas_kwargs):
         super().__init__(holder, width=width, height=height, **canvas_kwargs)
-        self.objects = {}  # TODO: why need for dict here?
+        self.objects = {}
 
         self.calibration_rectangle = None
         self.image = None
@@ -50,7 +50,7 @@ class GeometricCanvas(tk.Canvas):
     def get_by_type(self, obj_type):
         return [obj for obj in self.objects.values() if obj.type == obj_type]
 
-    def add_object(self, obj):
+    def add_object(self, obj, show=True):
         if not self.calibrated:
             raise Exception('Cannot add objects before calibration')
 
@@ -58,7 +58,7 @@ class GeometricCanvas(tk.Canvas):
 
         self.objects[item_id] = obj
 
-        if not obj._show:
+        if not show:
             obj.hide()
 
     def delete_object(self, id):
@@ -80,28 +80,33 @@ class GeometricCanvas(tk.Canvas):
         self.calibration_rectangle = _CalibrationRectangle(
             canvas_coords, coords, keep_real=keep_real, width=width,
             size=size, color=color, allow_translate=allow_translate,
-            allow_edit=allow_edit, show=show)
+            allow_edit=allow_edit)
 
         self.calibration_rectangle.create_widget(self)
 
-        if not self.calibration_rectangle._show:
+        if not show:
             self.calibration_rectangle.hide()
 
     def add_image(self, path, upper_left_corner=(0, 0), size=None, show=True):
         self.image = _CanvasImage(path=path, upper_left_corner=upper_left_corner,
-                                  show=show, size=size)
+                                  size=size)
 
         self.image.create_widget(self)
         self.tag_lower(self.image.id)  # move image back
 
+        if not show:
+            self.image.hide()
+
+    def is_hidden(self, obj_id):
+        return self.itemcget(obj_id, 'state') == 'hidden'
+
 
 class _BaseCanvasObject(metaclass=ABCMeta):
 
-    def __init__(self, name, text, color, show, allow_translate, allow_delete,
+    def __init__(self, name, text, color, allow_translate, allow_delete,
                  allow_edit):
         self.name = name
         self.text = text
-        self._show = show
         self._allow_translate = allow_translate
         self._allow_delete = allow_delete
         self._allow_edit = allow_edit
@@ -182,11 +187,9 @@ class _BaseCanvasObject(metaclass=ABCMeta):
             self.unbind_edit()
 
     def hide(self):
-        self._show = False
         self.canvas.itemconfigure(self.id, state='hidden')
 
     def show(self):
-        self._show = True
         self.canvas.itemconfigure(self.id, state='normal')
 
     def show_text(self):
@@ -383,9 +386,9 @@ class _CalibrationRectangle(_CompositeBaseObject):
     type = 'CalibrationRectangle'
 
     def __init__(self, canvas_coords, coords, width=2, size=8,
-                 color='black', show=True, keep_real=False, allow_translate=True,
+                 color='black', keep_real=False, allow_translate=True,
                  allow_edit=True):
-        super().__init__(None, None, color, show, width=width, size=size,
+        super().__init__(None, None, color, width=width, size=size,
                          allow_translate=allow_translate, allow_delete=False,
                          allow_edit=allow_edit)
         self._pt1 = _MasterCalibrationPoint(self, canvas_coords[0], coords[0],
@@ -505,9 +508,9 @@ class _CanvasImage(_BaseCanvasObject):
     # TODO: keep ratio -> Ctrl-Motion
     # TODO: enlarge from center -> Shift-Ctrl-Motion
 
-    def __init__(self, path, upper_left_corner=(0, 0), size=None, show=True,
+    def __init__(self, path, upper_left_corner=(0, 0), size=None,
                  allow_translate=True, allow_delete=True, allow_edit=True):
-        super().__init__(None, None, None, show=show, allow_translate=allow_translate,
+        super().__init__(None, None, None, allow_translate=allow_translate,
                          allow_delete=allow_delete, allow_edit=allow_edit)
         self.path = path
         self._init_upper_left_corner = upper_left_corner
@@ -633,9 +636,9 @@ class _CanvasImage(_BaseCanvasObject):
 class Point(_BaseCanvasObject):
     type = 'Point'
 
-    def __init__(self, name, coords, color='blue', size=5, text='', show=True,
+    def __init__(self, name, coords, color='blue', size=5, text='',
                  allow_translate=True, allow_delete=True, allow_edit=True):
-        super().__init__(name, text, color, show, allow_translate, allow_delete,
+        super().__init__(name, text, color, allow_translate, allow_delete,
                          allow_edit)
         self._init_coords = coords
         self._size = size
@@ -764,9 +767,9 @@ class _CalibrationPoint:
 class _MasterCalibrationPoint(_DependentPoint, _CalibrationPoint):
 
     def __init__(self, calibration_rectangle, canvas_coords, coords,
-                 keep_real=False, color='green', size=5, show=True):
+                 keep_real=False, color='green', size=5):
         _DependentPoint.__init__(self, calibration_rectangle, None, None,
-                                 color=color, size=size, show=show)
+                                 color=color, size=size)
         _CalibrationPoint.__init__(self, canvas_coords, coords)
 
     def __sub__(self, other):
@@ -849,10 +852,9 @@ class _MasterCalibrationPoint(_DependentPoint, _CalibrationPoint):
 
 class _LinePoint(_DependentPoint):
 
-    def __init__(self, line, coords, color='blue', size=5, show=True,
-                 allow_translate=True):
+    def __init__(self, line, coords, color='blue', size=5, allow_translate=True):
         super().__init__(line, None, coords, color=color, size=size, text='',
-                         show=show, allow_translate=allow_translate)
+                         allow_translate=allow_translate)
 
     @property
     def canvas(self):
@@ -869,9 +871,8 @@ class _LinePoint(_DependentPoint):
 
 class _MasterSliderPoint(_LinePoint):
 
-    def __init__(self, slider, v, color='blue', size=5, show=True,
-                 allow_translate=True):
-        super().__init__(slider, None, color=color, size=size, show=show,
+    def __init__(self, slider, v, color='blue', size=5, allow_translate=True):
+        super().__init__(slider, None, color=color, size=size,
                          allow_translate=allow_translate)
         self.v = v
 
@@ -891,8 +892,8 @@ class _MasterSliderPoint(_LinePoint):
 
 class _SlaveSliderPoint(_LinePoint):
 
-    def __init__(self, slider, t, color='blue', size=5, show=True):
-        super().__init__(slider, None, color=color, size=size, show=show,
+    def __init__(self, slider, t, color='blue', size=5):
+        super().__init__(slider, None, color=color, size=size,
                          allow_translate=False)
         self._t = t
 
@@ -928,9 +929,9 @@ class _SlaveSliderPoint(_LinePoint):
 class _AbstractLine(_CompositeBaseObject, metaclass=ABCMeta):
 
     def __init__(self, name, points, width=1, size=5, small_size=3, color='red',
-                 text='', show=True, allow_translate=True, allow_delete=True,
+                 text='', allow_translate=True, allow_delete=True,
                  allow_edit=True):
-        super().__init__(name, text, color, show, allow_translate, allow_delete,
+        super().__init__(name, text, color, allow_translate, allow_delete,
                          allow_edit=allow_edit, width=width, size=size)
         self.points = points
         self.sliders = []
@@ -1118,17 +1119,17 @@ class Line(_AbstractLine):
     type = 'Line'
 
     def __init__(self, name, coords, width=1, size=5, small_size=4, color='red',
-                 text='', show=True, allow_translate=True, allow_delete=True,
+                 text='', allow_translate=True, allow_delete=True,
                  allow_edit=True):
 
-        points = [_LinePoint(self, coords_, color=color, size=small_size, show=show,
+        points = [_LinePoint(self, coords_, color=color, size=small_size,
                              allow_translate=allow_translate)
                   for coords_ in coords]
         points[0]._size = size
 
         super().__init__(name, points, width=width, size=size,
                          small_size=small_size, color=color, text=text,
-                         show=show, allow_translate=allow_translate,
+                         allow_translate=allow_translate,
                          allow_delete=allow_delete, allow_edit=allow_edit)
 
     def _create_popup_menu(self):
@@ -1136,8 +1137,7 @@ class Line(_AbstractLine):
 
     def add_point(self, coords, pos=None):
         point = _LinePoint(self, self.canvas.map2real(coords), color=self.color,
-                           size=self.small_size,
-                           show=self.show, allow_translate=self.allow_translate)
+                           size=self.small_size, allow_translate=self.allow_translate)
         point.create_widget(self.canvas)
 
         if pos not in ['begin', 'end']:
@@ -1172,25 +1172,25 @@ class Slider(_AbstractLine):
     type = 'Slider'
 
     def __init__(self, name, anchor, v_init, v_end, n_points, width=3,
-                 size=5, small_size=4, color='green', text='', show=True, allow_delete=True,
+                 size=5, small_size=4, color='green', text='', allow_delete=True,
                  allow_translate=True, allow_edit=True):
         self.anchor = anchor
         self.anchor.add_slider(self)
 
-        self.master_pts = [_MasterSliderPoint(self, v_init, color=color, size=size,
-                                              show=show),
+        self.master_pts = [_MasterSliderPoint(self, v_init, color=color,
+                                              size=size),
                            _MasterSliderPoint(self, v_end, color=color,
-                                              size=small_size, show=show)]
+                                              size=small_size)]
 
         points = [self.master_pts[0]]
         for t in self._get_ts(n_points):
             points.append(_SlaveSliderPoint(self, t, color=color,
-                                            size=small_size, show=show))
+                                            size=small_size))
         points.append(self.master_pts[1])
 
         super().__init__(name, points, width=width, size=size,
                          small_size=small_size, color=color, text=text,
-                         show=show, allow_delete=allow_delete,
+                         allow_delete=allow_delete,
                          allow_translate=allow_translate, allow_edit=allow_edit)
 
     def _get_ts(self, n_points):
@@ -1219,7 +1219,7 @@ class Slider(_AbstractLine):
         if len(ts) > previous_n - 2:
             for t in ts[previous_n - 2:]:
                 new_point = _SlaveSliderPoint(self, t, color=self.color,
-                                              size=self.small_size, show=self.show)
+                                              size=self.small_size)
                 new_point.create_widget(self.canvas)
                 self.points.insert(-1, new_point)
 
