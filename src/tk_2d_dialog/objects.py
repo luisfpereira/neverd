@@ -307,10 +307,10 @@ class _BaseCanvasObject(metaclass=ABCMeta):
 
 class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
 
-    def __init__(self, *args, width=1, size=4, **kwargs):
+    def __init__(self, *args, width=1, **kwargs):
+        # TODO: make init explicit
         super().__init__(*args, **kwargs)
-        self._size = size
-        self._width = width
+        self._init_width = width
 
     @property
     def coords(self):
@@ -332,11 +332,10 @@ class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
 
     @property
     def width(self):
-        return self._width
+        return int(float(self.canvas.itemcget(self.id, 'width')))
 
     @width.setter
     def width(self, value):
-        self._width = value
         self.canvas.itemconfigure(self.id, width=value)
 
     @_BaseCanvasObject.color.setter
@@ -348,7 +347,7 @@ class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
 
     @property
     def size(self):
-        return self._size
+        return int(self.points[0].size)
 
     @size.setter
     def size(self, value):
@@ -407,7 +406,7 @@ class _CalibrationRectangle(_CompositeBaseObject):
     def __init__(self, canvas_coords, coords, width=2, size=8,
                  color='black', keep_real=False, allow_translate=True,
                  allow_edit=True):
-        super().__init__(None, None, color, width=width, size=size,
+        super().__init__(None, None, color, width=width,
                          allow_translate=allow_translate, allow_delete=False,
                          allow_edit=allow_edit)
         self._pt1 = _MasterCalibrationPoint(self, canvas_coords[0], coords[0],
@@ -436,7 +435,7 @@ class _CalibrationRectangle(_CompositeBaseObject):
         self.id = self.canvas.create_rectangle(*pt_top_left.canvas_coords,
                                                *pt_bottom_right.canvas_coords,
                                                outline=self.color,
-                                               width=self.width)
+                                               width=self._init_width)
         # create points
         self._create_points(canvas)
 
@@ -696,22 +695,21 @@ class Point(_BaseCanvasObject):
         super().__init__(name, text, color, allow_translate, allow_delete,
                          allow_edit)
         self._init_coords = coords
-        self._size = size
+        self._init_size = size
 
     def __sub__(self, other):
         return self.canvas_coords - other.canvas_coords
 
     @property
     def size(self):
-        # TODO: make it "automatic"?
-        return self._size
+        x1, _, x2, _ = self.canvas.coords(self.id)
+        return int((x2 - x1) / 2)
 
     @size.setter
     def size(self, value):
         coords = self.canvas_coords
-        self._size = value
 
-        (x0, y0), (x1, y1) = self._get_rect_corners(coords)
+        (x0, y0), (x1, y1) = self._get_rect_corners(coords, value)
         self.canvas.coords(self.id, x0, y0, x1, y1)
 
     @property
@@ -737,11 +735,11 @@ class Point(_BaseCanvasObject):
         x2, y2 = center_coords + self.size
         self.canvas.coords(self.id, [x1, y1, x2, y2])
 
-    def _get_rect_corners(self, coords):
+    def _get_rect_corners(self, coords, size):
         # in canvas coordinates
         x, y = coords
 
-        r = self.size
+        r = size
         x0, y0 = x - r, y - r
         x1, y1 = x + r, y + r
 
@@ -753,7 +751,8 @@ class Point(_BaseCanvasObject):
     def create_widget(self, canvas):
         super().create_widget(canvas)
 
-        (x0, y0), (x1, y1) = self._get_rect_corners(self._get_init_coords())
+        (x0, y0), (x1, y1) = self._get_rect_corners(self._get_init_coords(),
+                                                    self._init_size)
 
         self.id = self.canvas.create_oval(
             x0, y0, x1, y1, fill=self.color, outline="")
@@ -983,14 +982,12 @@ class _SlaveSliderPoint(_LinePoint):
 
 class _AbstractLine(_CompositeBaseObject, metaclass=ABCMeta):
 
-    def __init__(self, name, points, width=1, size=5, small_size=3, color='red',
-                 text='', allow_translate=True, allow_delete=True,
-                 allow_edit=True):
+    def __init__(self, name, points, width=1, color='red', text='',
+                 allow_translate=True, allow_delete=True, allow_edit=True):
         super().__init__(name, text, color, allow_translate, allow_delete,
-                         allow_edit=allow_edit, width=width, size=size)
+                         allow_edit=allow_edit, width=width)
         self.points = points
         self.sliders = []
-        self._small_size = small_size  # sizes are useless until they're set
 
     @_CompositeBaseObject.allow_translate.setter
     def allow_translate(self, value):
@@ -1001,16 +998,14 @@ class _AbstractLine(_CompositeBaseObject, metaclass=ABCMeta):
 
     @_CompositeBaseObject.size.setter
     def size(self, value):
-        self._size = value
         self.points[0].size = value
 
     @property
     def small_size(self):
-        return self._small_size
+        return self.points[1].size
 
     @small_size.setter
     def small_size(self, value):
-        self._small_size = value
         for point in self.points[1:]:
             point.size = value
 
@@ -1020,7 +1015,7 @@ class _AbstractLine(_CompositeBaseObject, metaclass=ABCMeta):
         # create line
         coords = [point._get_init_coords() for point in self.points]
         self.id = self.canvas.create_line(
-            flatten_list(coords), fill=self.color, width=self.width)
+            flatten_list(coords), fill=self.color, width=self._init_width)
 
         # create points (order matters for bindings)
         self._create_points(canvas)
@@ -1180,10 +1175,9 @@ class Line(_AbstractLine):
         points = [_LinePoint(self, coords_, color=color, size=small_size,
                              allow_translate=allow_translate)
                   for coords_ in coords]
-        points[0]._size = size
+        points[0]._init_size = size
 
-        super().__init__(name, points, width=width, size=size,
-                         small_size=small_size, color=color, text=text,
+        super().__init__(name, points, width=width, color=color, text=text,
                          allow_translate=allow_translate,
                          allow_delete=allow_delete, allow_edit=allow_edit)
 
@@ -1243,8 +1237,7 @@ class Slider(_AbstractLine):
                                             size=small_size))
         points.append(self.master_pts[1])
 
-        super().__init__(name, points, width=width, size=size,
-                         small_size=small_size, color=color, text=text,
+        super().__init__(name, points, width=width, color=color, text=text,
                          allow_delete=allow_delete,
                          allow_translate=allow_translate, allow_edit=allow_edit)
 
