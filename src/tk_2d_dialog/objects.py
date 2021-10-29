@@ -20,6 +20,7 @@ ATOL = 1e-6
 
 # TODO: add mouse position in real world coordinates at bottom (info bar?)
 # TODO: cross-platform bindings
+# TODO: edit behavior
 
 
 class GeometricCanvas(tk.Canvas):
@@ -51,9 +52,20 @@ class GeometricCanvas(tk.Canvas):
     def get_by_type(self, obj_type):
         return [obj for obj in self.objects.values() if obj.type == obj_type]
 
+    def get_names(self, obj_type=None):
+        if obj_type:
+            objects = self.get_by_type(obj_type)
+        else:
+            objects = self.objects.values()
+
+        return [obj.name for obj in objects]
+
     def add_object(self, obj, show=True):
         if not self.calibrated:
             raise Exception('Cannot add objects before calibration')
+
+        if obj.name == '' or obj.name in self.get_names():
+            raise Exception('Name already exists')
 
         item_id = obj.create_widget(self)
 
@@ -88,15 +100,23 @@ class GeometricCanvas(tk.Canvas):
         if not show:
             self.calibration_rectangle.hide()
 
-    def add_image(self, path, upper_left_corner=(0, 0), size=None, show=True):
+    def add_image(self, path, upper_left_corner=(0, 0), size=None, show=True,
+                  allow_translate=True, allow_edit=True, allow_delete=True):
+        # TODO: allow resize?
         self.image = _CanvasImage(path=path, upper_left_corner=upper_left_corner,
-                                  size=size)
+                                  size=size, allow_translate=allow_translate,
+                                  allow_edit=allow_edit,
+                                  allow_delete=allow_delete)
 
         self.image.create_widget(self)
         self.tag_lower(self.image.id)  # move image back
 
         if not show:
             self.image.hide()
+
+    def delete_image(self):
+        self.image.destroy()
+        self.image = None
 
     def is_hidden(self, obj_id):
         return self.itemcget(obj_id, 'state') == 'hidden'
@@ -193,10 +213,6 @@ class _BaseCanvasObject(metaclass=ABCMeta):
     def show(self):
         self.canvas.itemconfigure(self.id, state='normal')
 
-    def show_text(self):
-        # TODO
-        pass
-
     def bind_translate(self):
         self.canvas.tag_bind(self.id, '<Button-1>', self.on_config_delta_mov)
         self.canvas.tag_bind(self.id, '<B1-Motion>', self.on_translate)
@@ -256,7 +272,6 @@ class _BaseCanvasObject(metaclass=ABCMeta):
         self.canvas.popup_menu.bind_menu_trigger()
 
     def as_dict(self):
-        # TODO: bring type to update
         data = {'name': self.name,
                 'text': self.text,
                 'color': self.color,
@@ -264,10 +279,10 @@ class _BaseCanvasObject(metaclass=ABCMeta):
                 'allow_delete': self.allow_delete,
                 'allow_edit': self.allow_edit}
 
-        return data
+        return self._clean_data_dict(data)
 
     def update(self, name=None, text=None, color=None, allow_translate=None,
-               allow_delete=None, allow_edit=None, **kwargs):
+               allow_delete=None, allow_edit=None):
         if name is not None:
             self.name = name
 
@@ -285,6 +300,9 @@ class _BaseCanvasObject(metaclass=ABCMeta):
 
         if allow_edit is not None:
             self.allow_edit = allow_edit
+
+    def _clean_data_dict(self, data):
+        return {key: value for key, value in data.items() if value is not None}
 
 
 class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
@@ -358,7 +376,7 @@ class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
 
     def update(self, name=None, coords=None, color=None, width=None, size=None,
                small_size=None, text=None, allow_translate=None, allow_delete=None,
-               allow_edit=None, **kwargs):
+               allow_edit=None):
         super().update(name=name, text=text, color=color,
                        allow_translate=allow_translate,
                        allow_delete=allow_delete, allow_edit=allow_edit)
@@ -379,7 +397,7 @@ class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
              'width': self.width,
              'size': self.size})
 
-        return data
+        return self._clean_data_dict(data)
 
 
 class _CalibrationRectangle(_CompositeBaseObject):
@@ -477,9 +495,8 @@ class _CalibrationRectangle(_CompositeBaseObject):
                            *pt_bottom_right.canvas_coords)
 
     def update(self, name=None, coords=None, canvas_coords=None, color=None,
-               width=None, size=None, keep_real=None,
-               allow_translate=None, allow_delete=None,
-               allow_edit=None, **kwargs):
+               width=None, size=None, keep_real=None, allow_translate=None,
+               allow_delete=None, allow_edit=None):
 
         if keep_real is not None:
             self.keep_real = keep_real
@@ -494,39 +511,32 @@ class _CalibrationRectangle(_CompositeBaseObject):
 
     def as_dict(self):
         data = super().as_dict()
-        for key in ['name', 'text', 'allow_delete']:
-            del data[key]
+        del data['allow_delete']
 
         data.update(
             {'canvas_coords': [point.canvas_coords for point in self.points],
              'keep_real': self.keep_real})
 
-        return data
+        return self._clean_data_dict(data)
 
 
 class _CanvasImage(_BaseCanvasObject):
     type = 'CanvasImage'
     # TODO: keep ratio -> Ctrl-Motion
     # TODO: enlarge from center -> Shift-Ctrl-Motion
+    # TODO: make current size appear near the mouse when changing size?
+    # TODO: set opacity
 
     def __init__(self, path, upper_left_corner=(0, 0), size=None,
                  allow_translate=True, allow_delete=True, allow_edit=True):
         super().__init__(None, None, None, allow_translate=allow_translate,
                          allow_delete=allow_delete, allow_edit=allow_edit)
-        self.path = path
+        self._init_path = path
         self._init_upper_left_corner = upper_left_corner
-        self._size = size
+        self._init_size = size
 
+        self._image = None
         self._photo_image = None
-
-    def bind_translate(self):
-        self.canvas.tag_bind(self.id, '<Motion>', self.on_config_resize)
-
-        self.canvas.tag_bind(self.id, '<Control-1>', self.on_config_delta_mov)
-        self.canvas.tag_bind(self.id, '<Control-1>',
-                             self.on_config_cursor_translate, add='+')
-        self.canvas.tag_bind(self.id, '<Control-B1-Motion>', self.on_translate)
-        self.canvas.tag_bind(self.id, '<ButtonRelease-1>', self.on_reset_cursor)
 
     @property
     def upper_left_corner(self):
@@ -538,27 +548,48 @@ class _CanvasImage(_BaseCanvasObject):
 
     @property
     def size(self):
-        return self._size
+        return self._image.size
 
     @size.setter
     def size(self, value):
-        self._size = value
-        self._photo_image = self._get_photo_image()
+        self._photo_image = self._get_photo_image(value)
         self.canvas.itemconfig(self.id, image=self._photo_image)
 
-    def _get_photo_image(self):
+    @property
+    def path(self):
+        return self._original_image.filename
+
+    @path.setter
+    def path(self, value):
+        if self.path == value:
+            return
+
+        self._original_image = Image.open(value)
+        self._photo_image = self._get_photo_image(self.size)
+        self.canvas.itemconfig(self.id, image=self._photo_image)
+
+    def bind_translate(self):
+        self.canvas.tag_bind(self.id, '<Motion>', self.on_config_resize)
+
+        self.canvas.tag_bind(self.id, '<Control-1>', self.on_config_delta_mov)
+        self.canvas.tag_bind(self.id, '<Control-1>',
+                             self.on_config_cursor_translate, add='+')
+        self.canvas.tag_bind(self.id, '<Control-B1-Motion>', self.on_translate)
+        self.canvas.tag_bind(self.id, '<ButtonRelease-1>', self.on_reset_cursor)
+
+    def _get_photo_image(self, size):
         self._image = self._original_image
-        if self.size is not None:
-            self._image = self._original_image.resize(self.size)
+        if size is not None:
+            self._image = self._original_image.resize(size)
 
         return ImageTk.PhotoImage(self._image)
 
     def create_widget(self, canvas):
         super().create_widget(canvas)
 
-        self._original_image = Image.open(self.path)
+        self._original_image = Image.open(self._init_path)
 
-        self._photo_image = self._get_photo_image()
+        self._photo_image = self._get_photo_image(self._init_size)
         self.id = self.canvas.create_image(*self._init_upper_left_corner,
                                            image=self._photo_image, anchor='nw')
 
@@ -632,6 +663,30 @@ class _CanvasImage(_BaseCanvasObject):
             self.canvas_coords = (previous_coords[0] - delta[0],
                                   previous_coords[1] - delta[1])
 
+    def update(self, allow_translate=None, allow_delete=None, allow_edit=None,
+               path=None, upper_left_corner=None, size=None,):
+        super().update(allow_translate=allow_translate,
+                       allow_delete=allow_delete, allow_edit=allow_edit)
+
+        if path is not None:
+            self.path = path
+
+        if upper_left_corner is not None:
+            self.upper_left_corner = upper_left_corner
+
+        if size is not None:
+            self.size = size
+
+    def as_dict(self):
+        data = super().as_dict()
+        data.update({
+            'upper_left_corner': self.upper_left_corner,
+            'path': self.path,
+            'size': self.size,
+        })
+
+        return self._clean_data_dict(data)
+
 
 class Point(_BaseCanvasObject):
     type = 'Point'
@@ -648,6 +703,7 @@ class Point(_BaseCanvasObject):
 
     @property
     def size(self):
+        # TODO: make it "automatic"?
         return self._size
 
     @size.setter
@@ -705,8 +761,7 @@ class Point(_BaseCanvasObject):
         return self.id
 
     def update(self, name=None, coords=None, color=None, size=None, text=None,
-               allow_translate=None, allow_delete=None, allow_edit=None,
-               **kwargs):
+               allow_translate=None, allow_delete=None, allow_edit=None):
         super().update(name, text, color, allow_translate, allow_delete,
                        allow_edit)
 
@@ -722,7 +777,7 @@ class Point(_BaseCanvasObject):
             {'coords': list(self.coords),
              'size': self.size})
 
-        return data
+        return self._clean_data_dict(data)
 
 
 class _DependentPoint(Point, metaclass=ABCMeta):
@@ -1099,7 +1154,7 @@ class _AbstractLine(_CompositeBaseObject, metaclass=ABCMeta):
 
     def update(self, name=None, coords=None, color=None, width=None, size=None,
                small_size=None, text=None, allow_translate=None, allow_delete=None,
-               allow_edit=None, **kwargs):
+               allow_edit=None):
         super().update(name=name, coords=coords, text=text, color=color,
                        width=width, size=size,
                        allow_translate=allow_translate, allow_delete=allow_delete,
@@ -1112,7 +1167,7 @@ class _AbstractLine(_CompositeBaseObject, metaclass=ABCMeta):
         data = super().as_dict()
         data['small_size'] = self.small_size
 
-        return data
+        return self._clean_data_dict(data)
 
 
 class Line(_AbstractLine):
@@ -1309,4 +1364,11 @@ class Slider(_AbstractLine):
                      'v_end': self.v_end,
                      'n_points': self.n_points})
 
-        return data
+        return self._clean_data_dict(data)
+
+
+TYPE2OBJ = {
+    'Point': Point,
+    'Line': Line,
+    'Slider': Slider
+}

@@ -11,6 +11,9 @@ from tk_2d_dialog.forms import CalibrationRectangleForm
 from tk_2d_dialog.forms import CanvasImageForm
 
 
+# TODO: view properties if edit is False?
+
+
 class _BasePopupMenu(tk.Menu, metaclass=ABCMeta):
 
     def __init__(self, *args, bind_trigger=True, config_on_trigger=False,
@@ -354,6 +357,10 @@ class ImagePopupMenu(ObjectPopupMenu):
     def _bind_menu_trigger(self, obj):
         self.object.canvas.tag_bind(obj.id, '<Control-2>',
                                     self.on_popup_menu_trigger)
+
+    def on_delete(self, *args):
+        self.object.canvas.delete_image()
+        self.object.canvas.popup_menu.bind_menu_trigger(delay=True)
 
 
 class ObjectAddPopupMenu(_BasePopupMenu):

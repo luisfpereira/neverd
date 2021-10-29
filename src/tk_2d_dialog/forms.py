@@ -1,19 +1,25 @@
 
+import os
 from abc import ABCMeta
+from abc import abstractmethod
 import tkinter as tk
 from tkinter import ttk
+from tkinter import messagebox
+from tkinter import filedialog
+
+import numpy as np
+from PIL import Image
 
 import tk_2d_dialog.objects as canvas_objects  # avoid circular import
 from tk_2d_dialog.generic_widgets import ScrollableFrame
 
 
-# TODO: improve defaults of line addition
+IMG_FORMATS = ['.gif', '.jpg', '.jpeg', '.png']
 
 
 class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
-    # TODO: bring title here
 
-    def __init__(self, canvas, frame_names, *args, obj=None,
+    def __init__(self, canvas, frame_names, *args, obj=None, title=None,
                  vert_space=10, **kwargs):
         self.canvas = canvas
         self.vert_space = vert_space
@@ -38,12 +44,20 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
             data = self.object.as_dict()
             self.set(data)
 
+        if title:
+            self.title(title)
+
     @property
     def edit(self):
         return False if self.object is None else True
 
     def _config_name(self):
-        frame = EntryFrame(self.holder, 'name')
+        forbidden_values = self.canvas.get_names()
+        if self.edit:
+            forbidden_values.remove(self.object.name)
+
+        frame = StringEntryFrame(self.holder, 'name', allow_empty=False,
+                                 forbidden_values=forbidden_values)
         return frame, {'name': frame}
 
     def _config_coords(self, name='coords', label='coords'):
@@ -63,10 +77,10 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
     def _config_sizes(self):
         container_frame = ttk.Frame(self.holder)
 
-        size_frame = SpinFrame(container_frame, 'size')
+        size_frame = SpinFrame(container_frame, 'size', default=5)
         size_frame.pack(side='left', fill='both', expand=True)
 
-        small_size_frame = SpinFrame(container_frame, 'small size')
+        small_size_frame = SpinFrame(container_frame, 'small size', default=3)
         small_size_frame.pack(side='left', fill='both', expand=True)
 
         return container_frame, {'size': size_frame,
@@ -99,7 +113,7 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         return container_frame, frame_dict
 
     def _config_text(self):
-        frame = EntryFrame(self.holder, 'text')
+        frame = StringEntryFrame(self.holder, 'text')
         return frame, {'text': frame}
 
     def _config_button(self, edit):
@@ -115,17 +129,54 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         frame = SpinFrame(self.holder, 'number of points', default=2, from_=2)
         return frame, {'n_points': frame}
 
-    def on_add(self, *args):
-        pass
+    def _post_process_get_data(self, data):
+        return data
+
+    def _preprocess_set_data(self, values):
+        return values
+
+    def _add_object(self, data):
+        point = canvas_objects.TYPE2OBJ[self.obj_type](**data)
+        self.canvas.add_object(point)
+
+    def _get_invalid_frames(self):
+        """Returns invalid frames.
+        """
+        return [label_frame for label_frame in self.info_container.values() if not label_frame.validate()]
+
+    def _validate(self):
+        invalid_frames = self._get_invalid_frames()
+        if len(invalid_frames) == 0:
+            return True
+
+        # create message box
+        invalid_names = [frame.name for frame in invalid_frames]
+        message = f'The following fields are invalid:\n{", ".join(invalid_names)}'
+        messagebox.showwarning(message=message)
+
+        return False
 
     def get(self):
-        return {key: frame.get() for key, frame in self.info_container.items()}
+        data = {key: frame.get() for key, frame in self.info_container.items()}
+        return self._post_process_get_data(data)
 
     def set(self, values):
+        values = self._preprocess_set_data(values)
         for key, value in values.items():
             self.info_container[key].set(value)
 
+    def on_add(self):
+        if not self._validate():
+            return
+
+        data = self.get()
+        self._add_object(data)
+        self.destroy()
+
     def on_edit(self, *args):
+        if not self._validate():
+            return
+
         data = self.get()
         self.object.update(**data)
         self.destroy()
@@ -134,36 +185,34 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
 class PointForm(_BaseForm):
 
     def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
+        self.obj_type = 'Point'
         frame_names = ['name', 'coords', 'color', 'size', 'allow', 'text']
 
-        super().__init__(canvas, frame_names, *args, obj=obj,
+        title = 'Add new point' if obj is None else 'Edit point'
+        super().__init__(canvas, frame_names, *args, obj=obj, title=title,
                          vert_space=vert_space, **kwargs)
-        title = 'Add new point' if not self.edit else 'Edit point'
-        self.title(title)
-
-    def on_add(self, *args):
-        data = self.get()
-        point = canvas_objects.Point(**data)
-        self.canvas.add_object(point)
-        self.destroy()
 
 
 class LineForm(_BaseForm):
 
     def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
+        self.obj_type = 'Line'
         frame_names = ['name', 'coords', 'color', 'width', 'sizes', 'allow',
                        'text']
         if obj is None:
             frame_names.insert(1, 'n_points')
 
-        super().__init__(canvas, frame_names, *args, obj=obj,
+        title = 'Add new line' if obj is None else 'Edit line'
+        super().__init__(canvas, frame_names, *args, obj=obj, title=title,
                          vert_space=vert_space, **kwargs)
-        title = 'Add new line' if not self.edit else 'Edit line'
-        self.title(title)
 
         if not self.edit:
             self._config_coords_bindings()
             self._set_default_coords()
+
+    def _config_coords_bindings(self):
+        n_points_frame = self._get_n_points_frame()
+        n_points_frame.tk_var.trace('w', self._update_coords_frame)
 
     def _get_n_points_frame(self):
         return self.info_container['n_points']
@@ -173,11 +222,7 @@ class LineForm(_BaseForm):
 
     def _set_default_coords(self):
         coords_frame = self._get_coords_frame()
-        coords_frame.set([[0., 0.], [1., 1.]])
-
-    def _config_coords_bindings(self):
-        n_points_frame = self._get_n_points_frame()
-        n_points_frame.tk_var.trace('w', self._update_coords_frame)
+        coords_frame.set([[0., 0.], [0., 0.]])
 
     def _update_coords_frame(self, *args):
         n_points_frame = self._get_n_points_frame()
@@ -190,12 +235,11 @@ class LineForm(_BaseForm):
         elif n_frames > n_points:
             coords_frame.remove_last_entry()
 
-    def on_add(self, *args):
-        data = self.get()
-        del data['n_points']
-        line = canvas_objects.Line(**data)
-        self.canvas.add_object(line)
-        self.destroy()
+    def _post_process_get_data(self, data):
+        if not self.edit:
+            del data['n_points']
+
+        return data
 
     def _config_coords(self):
         frame = MultipleCoordsFrame(self.holder)
@@ -206,30 +250,14 @@ class SliderForm(_BaseForm):
 
     def __init__(self, canvas, *args, obj=None, vert_space=10, line_names=None,
                  **kwargs):
+        self.obj_type = 'Slider'
         frame_names = ['name', 'lines', 'coords', 'n_points', 'color', 'width',
                        'sizes', 'allow', 'text']
         self.line_names = line_names
 
-        super().__init__(canvas, frame_names, *args, obj=obj,
+        title = 'Add new slider' if obj is None else 'Edit slider'
+        super().__init__(canvas, frame_names, *args, obj=obj, title=title,
                          vert_space=vert_space, **kwargs)
-        title = 'Add new slider' if not self.edit else 'Edit slider'
-        self.title(title)
-
-    def _get_lines(self):
-        return self.canvas.get_by_type('Line')
-
-    def _get_line_names(self):
-        return [line.name for line in self._get_lines()]
-
-    def _get_available_line_names(self):
-        if self.line_names is not None:
-            return self.line_names
-        else:
-            return self._get_line_names()
-
-    def _get_line_from_name(self, line_name):
-        line_names = self._get_line_names()
-        return self._get_lines()[line_names.index(line_name)]
 
     def _config_coords(self):
         frame = MultipleCoordsFrame(self.holder, dim=1)
@@ -249,15 +277,23 @@ class SliderForm(_BaseForm):
                            values=line_names)
         return frame, {'anchor': frame}
 
-    def on_add(self, *args):
-        data = self.get()
-        slider = canvas_objects.Slider(**data)
-        self.canvas.add_object(slider)
-        self.destroy()
+    def _get_lines(self):
+        return self.canvas.get_by_type('Line')
 
-    def get(self):
-        data = super().get()
+    def _get_line_names(self):
+        return self.canvas.get_names('Line')
 
+    def _get_available_line_names(self):
+        if self.line_names is not None:
+            return self.line_names
+        else:
+            return self._get_line_names()
+
+    def _get_line_from_name(self, line_name):
+        line_names = self._get_line_names()
+        return self._get_lines()[line_names.index(line_name)]
+
+    def _post_process_get_data(self, data):
         line = self._get_line_from_name(data['anchor'])
         if self.edit:
             del data['anchor']
@@ -269,14 +305,14 @@ class SliderForm(_BaseForm):
 
         return data
 
-    def set(self, values):
+    def _preprocess_set_data(self, values):
         del values['coords']
 
         values['v'] = [[v] for v in [values['v_init'], values['v_end']]]
         del values['v_init']
         del values['v_end']
 
-        super().set(values)
+        return values
 
 
 class CalibrationRectangleForm(_BaseForm):
@@ -285,10 +321,9 @@ class CalibrationRectangleForm(_BaseForm):
         frame_names = ['canvas_coords', 'coords', 'keep_real', 'color',
                        'width', 'size', 'allow']
 
-        super().__init__(canvas, frame_names, *args, obj=obj,
+        title = 'Add calibration' if obj is None else 'Edit calibration'
+        super().__init__(canvas, frame_names, *args, obj=obj, title=title,
                          vert_space=vert_space, **kwargs)
-        title = 'Add calibration' if not self.edit else 'Edit calibration'
-        self.title(title)
 
         if not self.edit:
             self._set_default_coords()
@@ -323,24 +358,21 @@ class CalibrationRectangleForm(_BaseForm):
         width, height = float(self.canvas['width']), float(self.canvas['height'])
         canvas_coords_frame.set([[20., 20.], [width - 20, height - 20]])
 
-    def on_add(self, *args):
-        data = self.get()
+    def _add_object(self, data):
         self.canvas.calibrate(**data)
-        self.destroy()
 
 
 class CanvasImageForm(_BaseForm):
 
     def __init__(self, canvas, *args, obj=None, vert_space=10, **kwargs):
-        frame_names = ['path', 'upper_left_corner', 'size']  # TODO: add size?
-        super().__init__(canvas, frame_names, *args, obj=obj,
+        frame_names = ['path', 'upper_left_corner', 'size', 'allow']
+
+        title = 'Add image' if obj is None else 'Edit image'
+        super().__init__(canvas, frame_names, *args, obj=obj, title=title,
                          vert_space=vert_space, **kwargs)
 
-        title = 'Add image' if not self.edit else 'Edit image'
-        self.title(title)
-
     def _config_path(self):
-        frame = EntryFrame(self.holder, 'path')
+        frame = PathEntryFrame(self.holder, 'path', self.on_browse)
         return frame, {'path': frame}
 
     def _config_upper_left_corner(self):
@@ -351,35 +383,68 @@ class CanvasImageForm(_BaseForm):
                      allow_delete=True):
         container_frame = ttk.Frame(self.holder)
 
-        width_frame = EntryFrame(container_frame, 'width', default=300)
+        width_frame = IntEntryFrame(container_frame, 'width', default=300,
+                                    min_value=10)
         width_frame.pack(side='left', fill='both', expand=True)
 
-        height_frame = EntryFrame(container_frame, 'height', default=300)
+        height_frame = IntEntryFrame(container_frame, 'height', default=300,
+                                     min_value=10)
         height_frame.pack(side='left', fill='both', expand=True)
 
         return container_frame, {'width': width_frame,
                                  'height': height_frame}
 
-    def on_add(self, *args):
-        data = self.get()
-
-        # TODO: edit after using write entry
-        data['size'] = (int(data['width']), int(data['height']))
+    def _post_process_get_data(self, data):
+        data['size'] = (data['width'], data['height'])
         del data['width']
         del data['height']
 
+        return data
+
+    def _preprocess_set_data(self, values):
+        values['width'], values['height'] = values['size']
+        del values['size']
+
+        return values
+
+    def _add_object(self, data):
         self.canvas.add_image(**data)
-        self.destroy()
+
+    def on_browse(self, *args):
+        previous_path = self.info_container['path'].get()
+
+        title = 'Choose image'
+        filetypes = [('image files', fmt) for fmt in IMG_FORMATS]
+        path = filedialog.askopenfilename(title=title, filetypes=filetypes)
+
+        if path == "":
+            return
+
+        path = os.path.relpath(path)
+
+        if path == previous_path:
+            return
+
+        self.info_container['path'].set(path)
+
+        image = Image.open(path)
+        self.info_container['width'].set(image.size[0])
+        self.info_container['height'].set(image.size[1])
 
 
 class _LabeledFrame(ttk.Frame):
 
     def __init__(self, holder, label):
         super().__init__(holder)
+        self.label = None
 
         if label is not None:
-            label = ttk.Label(self, text=label)
-            label.pack()
+            self.label = ttk.Label(self, text=label)
+            self.label.pack()
+
+    @property
+    def name(self):
+        return self.label.cget('text') if self.label is not None else None
 
     def get(self):
         return self.tk_var.get()
@@ -387,19 +452,71 @@ class _LabeledFrame(ttk.Frame):
     def set(self, value):
         return self.tk_var.set(value)
 
+    def validate(self):
+        return True
 
-class EntryFrame(_LabeledFrame):
-    # TODO: add type
-    # TODO: add validation (e.g. non-empty)
 
-    def __init__(self, holder, label, default=''):
+class _EntryFrame(_LabeledFrame, metaclass=ABCMeta):
+
+    def __init__(self, holder, label, default):
         super().__init__(holder, label)
 
-        self.tk_var = tk.StringVar()
+        self.tk_var = self._create_tk_var()
         self.tk_var.set(default)
 
-        entry = ttk.Entry(self, textvariable=self.tk_var)
-        entry.pack()
+        self.entry = ttk.Entry(self, textvariable=self.tk_var)
+        self.entry.pack()
+
+    @abstractmethod
+    def _create_tk_var(self):
+        pass
+
+
+class StringEntryFrame(_EntryFrame):
+
+    def __init__(self, holder, label, default='', allow_empty=True,
+                 forbidden_values=None):
+        self.allow_empty = allow_empty
+        self.forbidden_values = forbidden_values if forbidden_values is not None else ()
+
+        super().__init__(holder, label, default)
+
+    def _create_tk_var(self):
+        return tk.StringVar()
+
+    def validate(self):
+        value = self.get()
+        if not self.allow_empty:
+            if value == '':
+                return False
+
+        if value in self.forbidden_values:
+            return False
+
+        return True
+
+
+class IntEntryFrame(_EntryFrame):
+    def __init__(self, holder, label, default=0, min_value=None, max_value=None):
+        super().__init__(holder, label, default)
+        self.min_value = min_value
+        self.max_value = max_value
+
+    def _create_tk_var(self):
+        return tk.IntVar()
+
+    def validate(self):
+        value = self.get()
+
+        if self.min_value is not None:
+            if value < self.min_value:
+                return False
+
+        if self.max_value is not None:
+            if value > self.max_value:
+                return False
+
+        return True
 
 
 class BoolFrame(_LabeledFrame):
@@ -460,11 +577,21 @@ class CoordsFrame(_LabeledFrame):
         for tk_var, value in zip(self.tk_vars, values):
             tk_var.set(value)
 
+    def validate(self):
+        try:
+            self.get()
+        except tk.TclError:
+            return False
+
+        return True
+
 
 class MultipleCoordsFrame(_LabeledFrame):
 
-    def __init__(self, holder, label='coords', dim=2, height=100):
+    def __init__(self, holder, label='coords', dim=2, height=100,
+                 allow_rep=False):
         super().__init__(holder, label)
+        self.allow_rep = allow_rep
         self.dim = dim
         self.frames = []
 
@@ -490,12 +617,55 @@ class MultipleCoordsFrame(_LabeledFrame):
     def get(self):
         return [frame.get() for frame in self.frames]
 
+    def validate(self):
+        # verify each frame
+        for frame in self.frames:
+            if not frame.validate():
+                return False
+
+        # verify repetitions
+        if not self.allow_rep:
+            for i, frame in enumerate(self.frames):
+                coords = frame.get()
+                for other_frame in self.frames[i + 1:]:
+                    other_coords = other_frame.get()
+                    if np.allclose(coords, other_coords):
+                        return False
+
+        return True
+
+
+class PathEntryFrame(_LabeledFrame):
+
+    def __init__(self, holder, label, command, default='', allow_empty=False):
+        super().__init__(holder, label)
+
+        self.path_frame = StringEntryFrame(self, None, default=default,
+                                           allow_empty=allow_empty)
+        self.path_frame.pack(side='left', fill='both')
+        self.path_frame.entry.configure(state='readonly')
+
+        self.button = self._create_button(command)
+        self.button.pack(side='left', fill='y')
+
+    def _create_button(self, command):
+        button = ttk.Button(self, command=command)
+        return button
+
+    def get(self):
+        return self.path_frame.get()
+
+    def set(self, value):
+        self.path_frame.set(value)
+
+    def validation(self):
+        return self.path_frame.validation()
+
 
 OBJ2FORM = {
     'Point': PointForm,
     'Line': LineForm,
     'Slider': SliderForm,
     'CalibrationRectangle': CalibrationRectangleForm,
-
-
+    'CanvasImage': CanvasImageForm,
 }
