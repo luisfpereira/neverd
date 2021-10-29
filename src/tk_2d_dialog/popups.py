@@ -78,6 +78,7 @@ class CanvasPopupMenu(_BasePopupMenu):
 
     def __init__(self, canvas):
         super().__init__(canvas, config_on_trigger=True, tearoff=0)
+        self._delay = False
 
     @property
     def canvas(self):
@@ -87,36 +88,29 @@ class CanvasPopupMenu(_BasePopupMenu):
         return ['Show/hide calibration', 'Add calibration', 'Show/hide image',
                 'Add image', 'Show all', 'Hide all']
 
-    def _bind_right_click(self):
-        """Binds right click.
+    def on_popup_menu_trigger(self, event):
+        if self._delay:
+            self._delay = False
+        else:
+            super().on_popup_menu_trigger(event)
 
-        Notes:
-            Trick to bind canvas again when object is deleted with a popup menu,
-            without triggering it instantaneously.
+    def delay_menu_trigger(self):
+        """Do not trigger once the popup menu.
         """
-        self.canvas.bind('<Button-2>', self.on_right_click)
-
-    def on_right_click(self, event=None):
-        if self._binded is True:
-            super().bind_menu_trigger()
-            self.canvas.event_generate('<Button-2>',
-                                       rootx=event.x_root,
-                                       rooty=event.y_root)
-        self._binded = True
+        self._delay = True
 
     def unbind_menu_trigger(self):
-        self._binded = False
         super().unbind_menu_trigger()
 
-    def bind_menu_trigger(self):
-        self._binded = True
+    def bind_menu_trigger(self, delay=False):
+        self._delay = delay
         super().bind_menu_trigger()
 
     def _config_bindings(self):
         if self.canvas.calibrated:
             self._bind_item('Show/hide calibration', self.on_show_hide_cal)
 
-            add_popup_menu = AddPopupMenu(self.canvas, tearoff=0)
+            add_popup_menu = ObjectAddPopupMenu(self.canvas, tearoff=0)
             self.add_cascade(label='Add object', menu=add_popup_menu)
             self._bind_item('Show all', self.on_show_all)
             self._bind_item('Hide all', self.on_hide_all)
@@ -205,14 +199,16 @@ class ObjectPopupMenu(_BasePopupMenu):
             self.bind_delete()
 
     def on_show_hide(self, *args):
-        if self.object._show:
-            self.object.hide()
-        else:
+        hidden = self.object.canvas.is_hidden(self.object.id)
+
+        if hidden:
             self.object.show()
+        else:
+            self.object.hide()
 
     def on_delete(self, *args):
         self.object.canvas.delete_object(self.object.id)
-        self.object.canvas.popup_menu._bind_right_click()
+        self.object.canvas.popup_menu.bind_menu_trigger(delay=True)
 
     def add_triggerer(self, obj):
         self.triggerers.append(obj)
@@ -343,7 +339,24 @@ class SliderPopupMenu(ObjectPopupMenu):
         self.object.n_points = self.object.n_points - 1
 
 
-class AddPopupMenu(_BasePopupMenu):
+class ImagePopupMenu(ObjectPopupMenu):
+
+    def on_popup_menu_trigger(self, event):
+        self.object.canvas.popup_menu.delay_menu_trigger()
+        super().on_popup_menu_trigger(event)
+
+    def _define_preferred_order(self):
+        return ['Show/hide', 'Edit', 'Delete']
+
+    def _unbind_menu_trigger(self, obj):
+        self.object.canvas.tag_unbind(obj.id, '<Control-2>')
+
+    def _bind_menu_trigger(self, obj):
+        self.object.canvas.tag_bind(obj.id, '<Control-2>',
+                                    self.on_popup_menu_trigger)
+
+
+class ObjectAddPopupMenu(_BasePopupMenu):
 
     def __init__(self, canvas, *args, **kwargs):
         self.canvas = canvas

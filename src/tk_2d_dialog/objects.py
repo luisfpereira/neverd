@@ -9,6 +9,7 @@ from tk_2d_dialog.popups import CanvasPopupMenu
 from tk_2d_dialog.popups import ObjectPopupMenu
 from tk_2d_dialog.popups import LinePopupMenu
 from tk_2d_dialog.popups import SliderPopupMenu
+from tk_2d_dialog.popups import ImagePopupMenu
 from tk_2d_dialog.utils import flatten_list
 from tk_2d_dialog.utils import get_bound_position
 from tk_2d_dialog.utils import MAP_POS_TO_CURSOR_SYMBOL
@@ -561,11 +562,10 @@ class _CanvasImage(_BaseCanvasObject):
         self.id = self.canvas.create_image(*self._init_upper_left_corner,
                                            image=self._photo_image, anchor='nw')
 
-    def _on_widget_creation(self):
-        self._config_bindings()
+    def _create_popup_menu(self):
+        self.popup_menu = ImagePopupMenu(self)
 
     def on_enter(self, *args):
-        # TODO: delete?
         pass
 
     def on_leave(self, *args):

@@ -29,7 +29,12 @@ def get_root(widget):
 
 
 def get_bound_position(canvas, widget_id, x, y, tol=2):
-    x1, y1, x2, y2 = canvas.bbox(widget_id)
+    coords = canvas.bbox(widget_id)
+    if coords is None:
+        return None
+
+    x1, y1, x2, y2 = coords
+
     left = _is_left(x1, x, tol)
     right = _is_right(x2, x, tol)
     top = _is_top(y1, y, tol)
