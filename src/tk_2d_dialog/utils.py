@@ -1,4 +1,5 @@
 
+import os
 
 MAP_POS_TO_CURSOR_SYMBOL = {
     'bottom-right': 'bottom_right_corner',
@@ -66,3 +67,9 @@ def _is_top(y1, y, tol):
 
 def _is_bottom(y2, y, tol):
     return y2 - tol <= y <= y2 + tol
+
+
+def get_image_path(filename):
+
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        'images', filename)

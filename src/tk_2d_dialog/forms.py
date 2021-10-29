@@ -9,9 +9,11 @@ from tkinter import filedialog
 
 import numpy as np
 from PIL import Image
+from PIL import ImageTk
 
 import tk_2d_dialog.objects as canvas_objects  # avoid circular import
 from tk_2d_dialog.generic_widgets import ScrollableFrame
+from tk_2d_dialog.utils import get_image_path
 
 
 IMG_FORMATS = ['.gif', '.jpg', '.jpeg', '.png']
@@ -649,7 +651,12 @@ class PathEntryFrame(_LabeledFrame):
         self.button.pack(side='left', fill='y')
 
     def _create_button(self, command):
-        button = ttk.Button(self, command=command)
+        filename = get_image_path('load_icon.gif')
+
+        img = Image.open(filename).convert('RGBA')
+        self._button_image = ImageTk.PhotoImage(img)
+
+        button = ttk.Button(self, command=command, image=self._button_image)
         return button
 
     def get(self):
@@ -658,8 +665,8 @@ class PathEntryFrame(_LabeledFrame):
     def set(self, value):
         self.path_frame.set(value)
 
-    def validation(self):
-        return self.path_frame.validation()
+    def validate(self):
+        return self.path_frame.validate()
 
 
 OBJ2FORM = {
