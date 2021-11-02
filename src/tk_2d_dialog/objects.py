@@ -2,7 +2,7 @@ from abc import ABCMeta
 import tkinter as tk
 
 import numpy as np
-from PIL import ImageTk  # TODO: add PIL to dependencies
+from PIL import ImageTk
 from PIL import Image
 
 from tk_2d_dialog.popups import CanvasPopupMenu
@@ -307,9 +307,10 @@ class _BaseCanvasObject(metaclass=ABCMeta):
 
 class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
 
-    def __init__(self, *args, width=1, **kwargs):
-        # TODO: make init explicit
-        super().__init__(*args, **kwargs)
+    def __init__(self, name, text, color, allow_translate, allow_delete,
+                 allow_edit, width=1):
+        super().__init__(name, text, color, allow_translate, allow_delete,
+                         allow_edit)
         self._init_width = width
 
     @property
@@ -525,6 +526,7 @@ class _CanvasImage(_BaseCanvasObject):
     # TODO: enlarge from center -> Shift-Ctrl-Motion
     # TODO: make current size appear near the mouse when changing size?
     # TODO: set opacity
+    # TODO: resize via ratio
 
     def __init__(self, path, upper_left_corner=(0, 0), size=None,
                  allow_translate=True, allow_delete=True, allow_edit=True):
