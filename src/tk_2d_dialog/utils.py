@@ -1,5 +1,7 @@
 
 import os
+import tkinter as tk
+
 
 MAP_POS_TO_CURSOR_SYMBOL = {
     'bottom-right': 'bottom_right_corner',
@@ -27,6 +29,28 @@ def get_root(widget):
         if parent.master is None:
             return parent
         parent = parent.master
+
+
+def disable_children(parent):
+    for child in parent.winfo_children():
+        try:
+            child.configure('state')
+        except tk.TclError:
+            disable_children(child)
+            continue
+
+        wtype = child.winfo_class()
+
+        if 'Label' in wtype:
+            continue
+
+        elif 'Entry' in wtype:
+            state = 'readonly'
+        else:
+            state = 'disabled'
+
+        child.configure(state=state)
+        disable_children(child)
 
 
 def get_bound_position(canvas, widget_id, x, y, tol=2):

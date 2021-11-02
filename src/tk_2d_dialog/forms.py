@@ -14,6 +14,7 @@ from PIL import ImageTk
 import tk_2d_dialog.objects as canvas_objects  # avoid circular import
 from tk_2d_dialog.generic_widgets import ScrollableFrame
 from tk_2d_dialog.utils import get_image_path
+from tk_2d_dialog.utils import disable_children
 
 
 IMG_FORMATS = ['.gif', '.jpg', '.jpeg', '.png']
@@ -22,7 +23,7 @@ IMG_FORMATS = ['.gif', '.jpg', '.jpeg', '.png']
 class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
 
     def __init__(self, canvas, frame_names, *args, obj=None, title=None,
-                 vert_space=10, **kwargs):
+                 vert_space=10, readonly=False, **kwargs):
         self.canvas = canvas
         self.vert_space = vert_space
         self.object = obj
@@ -41,13 +42,24 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
             frame.pack(fill='both', expand=True, pady=vert_space_)
             self.info_container.update(dict_info)
 
-        self._config_button(self.edit)
         if self.edit:
-            data = self.object.as_dict()
-            self.set(data)
+            self._set_edit_values()
+        else:
+            self._set_add_default_values()
 
         if title:
             self.title(title)
+
+        if readonly:
+            disable_children(self)
+
+        self._config_button(self.edit)
+
+    def _set_edit_values(self):
+        self.set(self.object.as_dict())
+
+    def _set_add_default_values(self):
+        pass
 
     @property
     def edit(self):
@@ -120,8 +132,12 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
 
     def _config_button(self, edit):
         if edit:
-            btn = ttk.Button(self.holder, command=self.on_edit,
-                             text='Edit')
+            if self.object.allow_edit:
+                btn = ttk.Button(self.holder, command=self.on_edit,
+                                 text='Edit')
+            else:
+                btn = ttk.Button(self.holder, command=self.on_quit,
+                                 text='Close')
         else:
             btn = ttk.Button(self.holder, command=self.on_add,
                              text='Add')
@@ -167,13 +183,13 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         for key, value in values.items():
             self.info_container[key].set(value)
 
-    def on_add(self):
+    def on_add(self, *args):
         if not self._validate():
             return
 
         data = self.get()
         self._add_object(data)
-        self.destroy()
+        self.on_quit(*args)
 
     def on_edit(self, *args):
         if not self._validate():
@@ -181,6 +197,9 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
 
         data = self.get()
         self.object.update(**data)
+        self.on_quit(*args)
+
+    def on_quit(self, *args):
         self.destroy()
 
 
@@ -208,9 +227,9 @@ class LineForm(_BaseForm):
         super().__init__(canvas, frame_names, *args, obj=obj, title=title,
                          vert_space=vert_space, **kwargs)
 
-        if not self.edit:
-            self._config_coords_bindings()
-            self._set_default_coords()
+    def _set_add_default_values(self):
+        self._config_coords_bindings()
+        self._set_default_coords()
 
     def _config_coords_bindings(self):
         n_points_frame = self._get_n_points_frame()
@@ -327,8 +346,8 @@ class CalibrationRectangleForm(_BaseForm):
         super().__init__(canvas, frame_names, *args, obj=obj, title=title,
                          vert_space=vert_space, **kwargs)
 
-        if not self.edit:
-            self._set_default_coords()
+    def _set_add_default_values(self):
+        self._set_default_coords()
 
     def _get_coords_frame(self):
         return self.info_container['coords']

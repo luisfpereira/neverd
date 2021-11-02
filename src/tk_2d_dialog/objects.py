@@ -20,7 +20,7 @@ ATOL = 1e-6
 
 # TODO: add mouse position in real world coordinates at bottom (info bar?)
 # TODO: cross-platform bindings
-# TODO: edit behavior
+# TODO: check change of coordinates (sign)
 
 
 class GeometricCanvas(tk.Canvas):
@@ -173,7 +173,7 @@ class _BaseCanvasObject(metaclass=ABCMeta):
 
     @property
     def allow_translate(self):
-        return self._allow_translate
+        return self._allow_translate and self._allow_edit
 
     @allow_translate.setter
     def allow_translate(self, value):
@@ -231,6 +231,7 @@ class _BaseCanvasObject(metaclass=ABCMeta):
         self.popup_menu.bind_edit()
 
     def unbind_edit(self):
+        self.unbind_translate()
         self.popup_menu.unbind_edit()
 
     def _config_bindings(self):
@@ -705,7 +706,7 @@ class Point(_BaseCanvasObject):
     @property
     def size(self):
         x1, _, x2, _ = self.canvas.coords(self.id)
-        return int((x2 - x1) / 2)
+        return round((x2 - x1)) / 2
 
     @size.setter
     def size(self, value):
@@ -733,8 +734,10 @@ class Point(_BaseCanvasObject):
 
     @canvas_coords.setter
     def canvas_coords(self, center_coords):
-        x1, y1 = center_coords - self.size
-        x2, y2 = center_coords + self.size
+        size = self.size
+
+        x1, y1 = center_coords - size
+        x2, y2 = center_coords + size
         self.canvas.coords(self.id, [x1, y1, x2, y2])
 
     def _get_rect_corners(self, coords, size):
@@ -793,7 +796,7 @@ class _DependentPoint(Point, metaclass=ABCMeta):
 
     def _create_popup_menu(self):
         # uses line menu
-        self.popup_menu.add_triggerer(self)
+        self.popup_menu.add_trigger(self)
 
     def _destroy_popup_menu(self):
         pass
@@ -821,6 +824,7 @@ class _CalibrationPoint:
 
 
 class _MasterCalibrationPoint(_DependentPoint, _CalibrationPoint):
+    # TODO: use 2 lines instead of a point?
 
     def __init__(self, calibration_rectangle, canvas_coords, coords,
                  keep_real=False, color='green', size=5):
@@ -1252,7 +1256,7 @@ class Slider(_AbstractLine):
 
     @n_points.setter
     def n_points(self, n_points):
-        if self.n_points == n_points or n_points < 3:
+        if self.n_points == n_points or n_points < 2:
             return
 
         previous_n = self.n_points
@@ -1340,8 +1344,10 @@ class Slider(_AbstractLine):
                color=None, width=None, size=None, small_size=None, text=None,
                allow_translate=None, allow_delete=None, allow_edit=None,
                **kwargs):
-        super().update(name, None, color, width, size, small_size, text,
-                       allow_translate, allow_delete, allow_edit)
+        super().update(name=name, coords=None, color=color, width=width,
+                       size=size, small_size=small_size, text=text,
+                       allow_translate=allow_translate, allow_delete=allow_delete,
+                       allow_edit=allow_edit)
 
         if v_init is not None:
             self.v_init = v_init
