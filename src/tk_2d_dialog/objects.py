@@ -579,14 +579,43 @@ class _CanvasImage(_BaseCanvasObject):
         self._photo_image = self._get_photo_image(self.size)
         self.canvas.itemconfig(self.id, image=self._photo_image)
 
+    def _config_bindings(self):
+        super()._config_bindings()
+
+        if self.allow_edit:
+            self._bind_resize_config()
+
     def bind_translate(self):
-        self.canvas.tag_bind(self.id, '<Motion>', self.on_config_resize)
 
         self.canvas.tag_bind(self.id, '<Control-1>', self.on_config_delta_mov)
         self.canvas.tag_bind(self.id, '<Control-1>',
                              self.on_config_cursor_translate, add='+')
         self.canvas.tag_bind(self.id, '<Control-B1-Motion>', self.on_translate)
         self.canvas.tag_bind(self.id, '<ButtonRelease-1>', self.on_reset_cursor)
+
+    def unbind_translate(self):
+        self.canvas.tag_unbind(self.id, '<Control-1>')
+        self.canvas.tag_unbind(self.id, '<Control-B1-Motion>')
+        self.canvas.tag_unbind(self.id, '<ButtonRelease-1>')
+
+    def _bind_resize_config(self):
+        self.canvas.tag_bind(self.id, '<Motion>', self.on_config_resize)
+
+    def _unbind_resize_config(self):
+        self.canvas.tag_unbind(self.id, '<Motion>')
+
+    def bind_edit(self):
+        super().bind_edit()
+        self._bind_resize_config()
+
+    def unbind_edit(self):
+        super().unbind_edit()
+        self._unbind_resize_config()
+        self._unbind_resize()
+
+    def _unbind_resize(self):
+        self.canvas.tag_unbind(self.id, '<B1-Motion>')
+        self.on_reset_cursor()
 
     def _get_photo_image(self, size):
         self._image = self._original_image
@@ -608,9 +637,11 @@ class _CanvasImage(_BaseCanvasObject):
         self.popup_menu = ImagePopupMenu(self)
 
     def on_enter(self, *args):
-        pass
+        if self.allow_edit:
+            self._bind_resize_config()
 
     def on_leave(self, *args):
+        self._unbind_resize_config()
         self._unbind_resize()
 
     def on_config_cursor_translate(self, *args):
@@ -623,12 +654,8 @@ class _CanvasImage(_BaseCanvasObject):
     def on_reset_cursor(self, *args):
         self.canvas.config(cursor='')
 
-    def _unbind_resize(self):
-        self.canvas.tag_unbind(self.id, '<B1-Motion>')
-        self.on_reset_cursor()
-
     def on_config_resize(self, event):
-        tol = 3
+        tol = 10
 
         position = get_bound_position(self.canvas, self.id, event.x, event.y,
                                       tol=tol)
