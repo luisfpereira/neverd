@@ -1,6 +1,6 @@
 
 
-from never.menus import FileMenu
+from neverd.menus import FileMenu
 
 
 class App():

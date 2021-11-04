@@ -3,10 +3,10 @@ doc:
 	cd docs && make html
 
 test:
-	pytest --cov=never 
+	pytest --cov=neverd 
 
 lint:
-	pylint src/never
+	pylint src/neverd
 
 wheel:
 	rm -rf build

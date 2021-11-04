@@ -12,9 +12,9 @@ def main_cli():
 @click.command()
 @click.option("--filename", '-f', nargs=1, type=str, default=None)
 def gui(filename):
-    from never.helpers import load_from_json
-    from never.helpers import load_from_dict
-    from never.app import App
+    from neverd.helpers import load_from_json
+    from neverd.helpers import load_from_dict
+    from neverd.app import App
 
     root = tk.Tk()
 

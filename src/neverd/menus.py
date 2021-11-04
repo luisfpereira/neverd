@@ -4,8 +4,8 @@ import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
 
-from never.utils import get_menubar
-from never.helpers import update_canvas_from_dict
+from neverd.utils import get_menubar
+from neverd.helpers import update_canvas_from_dict
 
 
 class FileMenu(tk.Menu):

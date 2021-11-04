@@ -7,14 +7,14 @@ import numpy as np
 from PIL import ImageTk
 from PIL import Image
 
-from never.popups import CanvasPopupMenu
-from never.popups import ObjectPopupMenu
-from never.popups import LinePopupMenu
-from never.popups import SliderPopupMenu
-from never.popups import ImagePopupMenu
-from never.utils import flatten_list
-from never.utils import get_bound_position
-from never.utils import MAP_POS_TO_CURSOR_SYMBOL
+from neverd.popups import CanvasPopupMenu
+from neverd.popups import ObjectPopupMenu
+from neverd.popups import LinePopupMenu
+from neverd.popups import SliderPopupMenu
+from neverd.popups import ImagePopupMenu
+from neverd.utils import flatten_list
+from neverd.utils import get_bound_position
+from neverd.utils import MAP_POS_TO_CURSOR_SYMBOL
 
 
 ATOL = 1e-6

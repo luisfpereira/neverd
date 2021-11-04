@@ -3,12 +3,12 @@ from abc import ABCMeta
 from abc import abstractmethod
 import tkinter as tk
 
-from never.forms import OBJ2FORM
-from never.forms import PointForm
-from never.forms import LineForm
-from never.forms import SliderForm
-from never.forms import CalibrationRectangleForm
-from never.forms import CanvasImageForm
+from neverd.forms import OBJ2FORM
+from neverd.forms import PointForm
+from neverd.forms import LineForm
+from neverd.forms import SliderForm
+from neverd.forms import CalibrationRectangleForm
+from neverd.forms import CanvasImageForm
 
 
 class _BasePopupMenu(tk.Menu, metaclass=ABCMeta):

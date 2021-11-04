@@ -11,11 +11,11 @@ import numpy as np
 from PIL import Image
 from PIL import ImageTk
 
-import never.objects as canvas_objects  # avoid circular import
-from never.generic_widgets import ScrollableFrame
-from never.utils import get_image_path
-from never.utils import disable_children
-from never.constants import ICON_NAMES
+import neverd.objects as canvas_objects  # avoid circular import
+from neverd.generic_widgets import ScrollableFrame
+from neverd.utils import get_image_path
+from neverd.utils import disable_children
+from neverd.constants import ICON_NAMES
 
 
 IMG_FORMATS = ['.gif', '.jpg', '.jpeg', '.png']

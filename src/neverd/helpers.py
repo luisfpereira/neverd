@@ -2,8 +2,8 @@
 import json
 import tkinter as tk
 
-from never.objects import GeometricCanvas
-from never.objects import TYPE2OBJ
+from neverd.objects import GeometricCanvas
+from neverd.objects import TYPE2OBJ
 
 
 def load_from_json(filename, holder=None):
