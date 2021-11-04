@@ -34,8 +34,12 @@ class GeometricCanvas(tk.Canvas):
 
         self.calibration_rectangle = None
         self.image = None
+        self._width = width
+        self._height = height
 
         self.popup_menu = CanvasPopupMenu(self)
+
+        self.bind('<Configure>', self._update_size)
 
     @property
     def calibrated(self):
@@ -47,7 +51,7 @@ class GeometricCanvas(tk.Canvas):
 
     @property
     def width(self):
-        return int(self.winfo_reqwidth()) - self._border_width
+        return self._width
 
     @width.setter
     def width(self, value):
@@ -55,11 +59,15 @@ class GeometricCanvas(tk.Canvas):
 
     @property
     def height(self):
-        return int(self.winfo_reqheight()) - self._border_width
+        return self._height
 
     @height.setter
     def height(self, value):
         self.config(height=value)
+
+    def _update_size(self, event):
+        self._width = int(event.width) - self._border_width
+        self._height = int(event.height) - self._border_width
 
     def has_image(self):
         return self.image is not None
