@@ -10,11 +10,15 @@ def main_cli():
 
 
 @click.command()
-@click.argument("filename", nargs=1)
+@click.option("--filename", '-f', nargs=1, type=str, default=None)
 def gui(filename):
     from never.helpers import load_from_json
+    from never.helpers import load_from_dict
 
-    load_from_json(filename)
+    if filename is None:
+        load_from_dict({})
+    else:
+        load_from_json(filename)
     tk.mainloop()
 
 

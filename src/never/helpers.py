@@ -11,12 +11,16 @@ def load_from_json(filename, holder=None):
     with open(filename, 'r') as file:
         data = json.load(file)
 
+    return load_from_dict(data, holder=holder)
+
+
+def load_from_dict(data, holder=None):
     if holder is None:
         holder = tk.Tk()
 
     metadata = data.get('metadata', {})
     width = metadata.get('width', 800)
-    height = metadata.get('height', 800)
+    height = metadata.get('height', 600)
 
     canvas = GeometricCanvas(holder, width=width, height=height)
     canvas.pack(fill='both', expand=True)
