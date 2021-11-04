@@ -10,7 +10,7 @@
 .eggs
 build
 dist
-tk_2d_dialog.egg*
+*.egg*
 .DS_Store
 _build
 docs/source/api/_generated
