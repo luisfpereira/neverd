@@ -128,7 +128,7 @@ class _BaseCanvasObject(metaclass=ABCMeta):
                  allow_edit):
         self.name = name
         self.text = text
-        self._allow_translate = allow_translate
+        self._allow_translate = allow_translate and allow_edit
         self._allow_delete = allow_delete
         self._allow_edit = allow_edit
         self._color = color
@@ -366,6 +366,13 @@ class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
         for point in self.points:
             point.hide()
 
+    @_BaseCanvasObject.allow_edit.setter
+    def allow_edit(self, value):
+        super(_CompositeBaseObject, type(self)).allow_edit.fset(self, value)
+
+        for point in self.points:
+            point.allow_edit = value
+
     def destroy(self):
         super().destroy()
         for point in self.points:
@@ -412,9 +419,11 @@ class _CalibrationRectangle(_CompositeBaseObject):
                          allow_translate=allow_translate, allow_delete=False,
                          allow_edit=allow_edit)
         self._pt1 = _MasterCalibrationPoint(self, canvas_coords[0], coords[0],
-                                            color=color, size=size)
+                                            color=color, size=size,
+                                            allow_translate=allow_edit)
         self._pt2 = _MasterCalibrationPoint(self, canvas_coords[1], coords[1],
-                                            color=color, size=size)
+                                            color=color, size=size,
+                                            allow_translate=allow_edit)
         self.keep_real = keep_real
         self._min_dist = 2
 
@@ -787,6 +796,7 @@ class Point(_BaseCanvasObject):
 class _DependentPoint(Point, metaclass=ABCMeta):
 
     def __init__(self, master, *args, **kwargs):
+        # TODO: make explicit
         super().__init__(*args, **kwargs)
         self.master = master
 
@@ -827,9 +837,10 @@ class _MasterCalibrationPoint(_DependentPoint, _CalibrationPoint):
     # TODO: use 2 lines instead of a point?
 
     def __init__(self, calibration_rectangle, canvas_coords, coords,
-                 keep_real=False, color='green', size=5):
+                 keep_real=False, color='green', size=5, allow_translate=True):
         _DependentPoint.__init__(self, calibration_rectangle, None, None,
-                                 color=color, size=size)
+                                 color=color, size=size,
+                                 allow_translate=allow_translate)
         _CalibrationPoint.__init__(self, canvas_coords, coords)
 
     def __sub__(self, other):
@@ -912,7 +923,8 @@ class _MasterCalibrationPoint(_DependentPoint, _CalibrationPoint):
 
 class _LinePoint(_DependentPoint):
 
-    def __init__(self, line, coords, color='blue', size=5, allow_translate=True):
+    def __init__(self, line, coords, color='blue', size=5, allow_translate=True,
+                 allow_edit=True):
         super().__init__(line, None, coords, color=color, size=size, text='',
                          allow_translate=allow_translate)
 
@@ -1014,6 +1026,13 @@ class _AbstractLine(_CompositeBaseObject, metaclass=ABCMeta):
     def small_size(self, value):
         for point in self.points[1:]:
             point.size = value
+
+    @_CompositeBaseObject.allow_edit.setter
+    def allow_edit(self, value):
+        super(_AbstractLine, type(self)).allow_edit.fset(self, value)
+        for slider in self.sliders:
+            if slider.allow_translate:
+                slider.allow_translate = value
 
     def create_widget(self, canvas):
         self.canvas = canvas
@@ -1179,7 +1198,7 @@ class Line(_AbstractLine):
                  allow_edit=True):
 
         points = [_LinePoint(self, coords_, color=color, size=small_size,
-                             allow_translate=allow_translate)
+                             allow_translate=allow_edit)
                   for coords_ in coords]
         points[0]._init_size = size
 
@@ -1233,9 +1252,10 @@ class Slider(_AbstractLine):
         self.anchor.add_slider(self)
 
         self.master_pts = [_MasterSliderPoint(self, v_init, color=color,
-                                              size=size),
+                                              size=size, allow_translate=allow_edit),
                            _MasterSliderPoint(self, v_end, color=color,
-                                              size=small_size)]
+                                              size=small_size,
+                                              allow_translate=allow_edit)]
 
         points = [self.master_pts[0]]
         for t in self._get_ts(n_points):
@@ -1243,6 +1263,7 @@ class Slider(_AbstractLine):
                                             size=small_size))
         points.append(self.master_pts[1])
 
+        allow_translate = allow_translate and anchor.allow_edit
         super().__init__(name, points, width=width, color=color, text=text,
                          allow_delete=allow_delete,
                          allow_translate=allow_translate, allow_edit=allow_edit)
@@ -1299,6 +1320,13 @@ class Slider(_AbstractLine):
     @v_end.setter
     def v_end(self, value):
         self.master_pts[1].canvas_coords = self.anchor.get_coords_by_v(value)
+
+    @_AbstractLine.allow_translate.setter
+    def allow_translate(self, value):
+        if value is True and not self.anchor.allow_edit:
+            return
+
+        super(Slider, type(self)).allow_translate.fset(self, value)
 
     def _create_popup_menu(self):
         self.popup_menu = SliderPopupMenu(self)

@@ -17,6 +17,9 @@ from tk_2d_dialog.utils import get_image_path
 from tk_2d_dialog.utils import disable_children
 
 
+# TODO: checks in slider
+
+
 IMG_FORMATS = ['.gif', '.jpg', '.jpeg', '.png']
 
 
@@ -44,8 +47,12 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
 
         if self.edit:
             self._set_edit_values()
+            self._set_edit_bindings()
         else:
             self._set_add_default_values()
+            self._set_add_bindings()
+
+        self._set_bindings()
 
         if title:
             self.title(title)
@@ -59,6 +66,16 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         self.set(self.object.as_dict())
 
     def _set_add_default_values(self):
+        pass
+
+    def _set_bindings(self):
+        self._bind_allow_edit()
+        self._bind_allow_translate()
+
+    def _set_add_bindings(self):
+        pass
+
+    def _set_edit_bindings(self):
         pass
 
     @property
@@ -110,7 +127,8 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         frame_dict = {}
 
         if allow_translate:
-            translate_frame = BoolFrame(container_frame, 'allow_translate')
+            translate_frame = BoolFrame(container_frame, 'allow_translate',
+                                        default=False)
             translate_frame.pack(side='left', fill='both', expand=True)
             frame_dict['allow_translate'] = translate_frame
 
@@ -146,6 +164,20 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
     def _config_n_points(self):
         frame = SpinFrame(self.holder, 'number of points', default=2, from_=2)
         return frame, {'n_points': frame}
+
+    def _bind_allow_edit(self):
+        if not ('allow_edit' in self.info_container and 'allow_translate' in self.info_container):
+            return
+
+        edit_var = self.info_container['allow_edit'].tk_var
+        edit_var.trace('w', self._on_allow_edit_change)
+
+    def _bind_allow_translate(self):
+        if 'allow_translate' not in self.info_container:
+            return
+
+        translate_var = self.info_container['allow_translate'].tk_var
+        translate_var.trace('w', self._on_allow_translate_change)
 
     def _post_process_get_data(self, data):
         return data
@@ -202,6 +234,16 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
     def on_quit(self, *args):
         self.destroy()
 
+    def _on_allow_edit_change(self, *args):
+        value = self.info_container['allow_edit'].tk_var.get()
+        if not value:
+            self.info_container['allow_translate'].tk_var.set(False)
+
+    def _on_allow_translate_change(self, *args):
+        translate_var = self.info_container['allow_translate'].tk_var
+        if translate_var.get() and not self.info_container['allow_edit'].tk_var.get():
+            translate_var.set(False)
+
 
 class PointForm(_BaseForm):
 
@@ -228,10 +270,17 @@ class LineForm(_BaseForm):
                          vert_space=vert_space, **kwargs)
 
     def _set_add_default_values(self):
-        self._config_coords_bindings()
         self._set_default_coords()
 
-    def _config_coords_bindings(self):
+    def _set_add_bindings(self):
+        super()._set_add_bindings()
+        self._bind_coords()
+
+    def _config_coords(self):
+        frame = MultipleCoordsFrame(self.holder)
+        return frame, {'coords': frame}
+
+    def _bind_coords(self):
         n_points_frame = self._get_n_points_frame()
         n_points_frame.tk_var.trace('w', self._update_coords_frame)
 
@@ -261,10 +310,6 @@ class LineForm(_BaseForm):
             del data['n_points']
 
         return data
-
-    def _config_coords(self):
-        frame = MultipleCoordsFrame(self.holder)
-        return frame, {'coords': frame}
 
 
 class SliderForm(_BaseForm):
@@ -334,6 +379,12 @@ class SliderForm(_BaseForm):
         del values['v_end']
 
         return values
+
+    def _on_allow_translate_change(self, *args):
+        line_name = self.info_container['anchor'].get()
+        line = self._get_line_from_name(line_name)
+        if not line.allow_edit:
+            self.info_container['allow_translate'].tk_var.set(False)
 
 
 class CalibrationRectangleForm(_BaseForm):
@@ -670,6 +721,7 @@ class PathEntryFrame(_LabeledFrame):
         self.button.pack(side='left', fill='y')
 
     def _create_button(self, command):
+        # TODO: improve get image location
         filename = get_image_path('load_icon.gif')
 
         img = Image.open(filename).convert('RGBA')
