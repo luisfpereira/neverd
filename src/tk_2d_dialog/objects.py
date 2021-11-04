@@ -102,7 +102,6 @@ class GeometricCanvas(tk.Canvas):
 
     def add_image(self, path, upper_left_corner=(0, 0), size=None, show=True,
                   allow_translate=True, allow_edit=True, allow_delete=True):
-        # TODO: allow resize?
         self.image = _CanvasImage(path=path, upper_left_corner=upper_left_corner,
                                   size=size, allow_translate=allow_translate,
                                   allow_edit=allow_edit,
@@ -272,6 +271,12 @@ class _BaseCanvasObject(metaclass=ABCMeta):
     def on_leave(self, *args):
         self.canvas.popup_menu.bind_menu_trigger()
 
+    def on_config_cursor_translate(self, *args):
+        self.canvas.config(cursor='fleur')
+
+    def on_reset_cursor(self, *args):
+        self.canvas.config(cursor='')
+
     def as_dict(self):
         data = {'name': self.name,
                 'text': self.text,
@@ -409,7 +414,6 @@ class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
 
 
 class _CalibrationRectangle(_CompositeBaseObject):
-    # TODO: translate similar to Image?
     type = 'CalibrationRectangle'
 
     def __init__(self, canvas_coords, coords, width=2, size=8,
@@ -503,6 +507,16 @@ class _CalibrationRectangle(_CompositeBaseObject):
 
         self.canvas.coords(self.id, *pt_top_left.canvas_coords,
                            *pt_bottom_right.canvas_coords)
+
+    def bind_translate(self):
+        super().bind_translate()
+        self.canvas.tag_bind(self.id, '<Button-1>',
+                             self.on_config_cursor_translate, add='+')
+        self.canvas.tag_bind(self.id, '<ButtonRelease-1>', self.on_reset_cursor)
+
+    def unbind_translate(self):
+        super().unbind_translate()
+        self.canvas.tag_unbind(self.id, '<ButtonRelease-1>')
 
     def update(self, name=None, coords=None, canvas_coords=None, color=None,
                width=None, size=None, keep_real=None, allow_translate=None,
@@ -644,15 +658,9 @@ class _CanvasImage(_BaseCanvasObject):
         self._unbind_resize_config()
         self._unbind_resize()
 
-    def on_config_cursor_translate(self, *args):
-        self.canvas.config(cursor='fleur')
-
     def _config_cursor_bound(self, position):
         symbol = MAP_POS_TO_CURSOR_SYMBOL.get(position)
         self.canvas.config(cursor=symbol)
-
-    def on_reset_cursor(self, *args):
-        self.canvas.config(cursor='')
 
     def on_config_resize(self, event):
         tol = 10
