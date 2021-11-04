@@ -1,3 +1,5 @@
+
+import json
 from abc import ABCMeta
 import tkinter as tk
 
@@ -25,7 +27,6 @@ ATOL = 1e-6
 
 class GeometricCanvas(tk.Canvas):
     type = 'GeometricCanvas'
-    # TODO: retrieve size
 
     def __init__(self, holder, width=800, height=800, **canvas_kwargs):
         super().__init__(holder, width=width, height=height, **canvas_kwargs)
@@ -40,6 +41,18 @@ class GeometricCanvas(tk.Canvas):
     def calibrated(self):
         return self.calibration_rectangle is not None
 
+    @property
+    def _border_width(self):
+        return 2 * (int(self['bd']) + int(self['highlightthickness']))
+
+    @property
+    def width(self):
+        return int(self.winfo_reqwidth()) - self._border_width
+
+    @property
+    def height(self):
+        return int(self.winfo_reqheight()) - self._border_width
+
     def has_image(self):
         return self.image is not None
 
@@ -51,6 +64,13 @@ class GeometricCanvas(tk.Canvas):
 
     def get_by_type(self, obj_type):
         return [obj for obj in self.objects.values() if obj.type == obj_type]
+
+    def get_by_name(self, name):
+        for obj in self.objects.values():
+            if obj.name == name:
+                return obj
+
+        return None
 
     def get_names(self, obj_type=None):
         if obj_type:
@@ -119,6 +139,29 @@ class GeometricCanvas(tk.Canvas):
 
     def is_hidden(self, obj_id):
         return self.itemcget(obj_id, 'state') == 'hidden'
+
+    def as_dict(self):
+        # TODO: retrieve size
+        output_dict = {}
+
+        output_dict['metadata'] = {'width': self.width,
+                                   'height': self.height}
+
+        if not self.calibrated:
+            return output_dict
+
+        output_dict['calibration'] = self.calibration_rectangle.as_dict()
+
+        if self.image:
+            output_dict['image'] = self.image.as_dict()
+
+        output_dict['objects'] = [obj.as_dict() for obj in self.objects.values()]
+
+        return output_dict
+
+    def dump(self, filename):
+        with open(filename, 'w') as file:
+            json.dump(self.as_dict(), file, indent=2)
 
 
 class _BaseCanvasObject(metaclass=ABCMeta):
@@ -278,7 +321,8 @@ class _BaseCanvasObject(metaclass=ABCMeta):
         self.canvas.config(cursor='')
 
     def as_dict(self):
-        data = {'name': self.name,
+        data = {'type': self.type,
+                'name': self.name,
                 'text': self.text,
                 'color': self.color,
                 'allow_translate': self.allow_translate,
@@ -406,7 +450,7 @@ class _CompositeBaseObject(_BaseCanvasObject, metaclass=ABCMeta):
     def as_dict(self):
         data = super().as_dict()
         data.update(
-            {'coords': list(self.coords),
+            {'coords': [coords.tolist() for coords in self.coords],
              'width': self.width,
              'size': self.size})
 
@@ -536,9 +580,10 @@ class _CalibrationRectangle(_CompositeBaseObject):
     def as_dict(self):
         data = super().as_dict()
         del data['allow_delete']
+        del data['type']
 
         data.update(
-            {'canvas_coords': [point.canvas_coords for point in self.points],
+            {'canvas_coords': [point.canvas_coords.tolist() for point in self.points],
              'keep_real': self.keep_real})
 
         return self._clean_data_dict(data)
@@ -725,6 +770,8 @@ class _CanvasImage(_BaseCanvasObject):
 
     def as_dict(self):
         data = super().as_dict()
+        del data['type']
+
         data.update({
             'upper_left_corner': self.upper_left_corner,
             'path': self.path,
@@ -830,9 +877,9 @@ class Point(_BaseCanvasObject):
 
 class _DependentPoint(Point, metaclass=ABCMeta):
 
-    def __init__(self, master, name, coords, color='blue', size=5, text='',
+    def __init__(self, master, name, coords, color='blue', size=5,
                  allow_translate=True):
-        super().__init__(name, coords, color=color, size=size, text=text,
+        super().__init__(name, coords, color=color, size=size, text=None,
                          allow_translate=allow_translate)
         self.master = master
 
@@ -961,7 +1008,7 @@ class _LinePoint(_DependentPoint):
 
     def __init__(self, line, coords, color='blue', size=5, allow_translate=True,
                  allow_edit=True):
-        super().__init__(line, None, coords, color=color, size=size, text='',
+        super().__init__(line, None, coords, color=color, size=size,
                          allow_translate=allow_translate)
 
     @property
@@ -1427,7 +1474,8 @@ class Slider(_AbstractLine):
 
         data.update({'v_init': self.v_init,
                      'v_end': self.v_end,
-                     'n_points': self.n_points})
+                     'n_points': self.n_points,
+                     'anchor': self.anchor.name})
 
         return self._clean_data_dict(data)
 
