@@ -15,9 +15,7 @@ import tk_2d_dialog.objects as canvas_objects  # avoid circular import
 from tk_2d_dialog.generic_widgets import ScrollableFrame
 from tk_2d_dialog.utils import get_image_path
 from tk_2d_dialog.utils import disable_children
-
-
-# TODO: checks in slider
+from tk_2d_dialog.constants import ICON_NAMES
 
 
 IMG_FORMATS = ['.gif', '.jpg', '.jpeg', '.png']
@@ -721,8 +719,7 @@ class PathEntryFrame(_LabeledFrame):
         self.button.pack(side='left', fill='y')
 
     def _create_button(self, command):
-        # TODO: improve get image location
-        filename = get_image_path('load_icon.gif')
+        filename = get_image_path(ICON_NAMES['load'])
 
         img = Image.open(filename).convert('RGBA')
         self._button_image = ImageTk.PhotoImage(img)
