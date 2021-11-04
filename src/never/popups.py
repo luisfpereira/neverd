@@ -3,15 +3,12 @@ from abc import ABCMeta
 from abc import abstractmethod
 import tkinter as tk
 
-from tk_2d_dialog.forms import OBJ2FORM
-from tk_2d_dialog.forms import PointForm
-from tk_2d_dialog.forms import LineForm
-from tk_2d_dialog.forms import SliderForm
-from tk_2d_dialog.forms import CalibrationRectangleForm
-from tk_2d_dialog.forms import CanvasImageForm
-
-
-# TODO: check binding consistency (public/private)
+from never.forms import OBJ2FORM
+from never.forms import PointForm
+from never.forms import LineForm
+from never.forms import SliderForm
+from never.forms import CalibrationRectangleForm
+from never.forms import CanvasImageForm
 
 
 class _BasePopupMenu(tk.Menu, metaclass=ABCMeta):

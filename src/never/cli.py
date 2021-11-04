@@ -12,7 +12,7 @@ def main_cli():
 @click.command()
 @click.argument("filename", nargs=1)
 def gui(filename):
-    from tk_2d_dialog.helpers import load_from_json
+    from never.helpers import load_from_json
 
     load_from_json(filename)
     tk.mainloop()

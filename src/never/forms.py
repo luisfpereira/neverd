@@ -11,11 +11,11 @@ import numpy as np
 from PIL import Image
 from PIL import ImageTk
 
-import tk_2d_dialog.objects as canvas_objects  # avoid circular import
-from tk_2d_dialog.generic_widgets import ScrollableFrame
-from tk_2d_dialog.utils import get_image_path
-from tk_2d_dialog.utils import disable_children
-from tk_2d_dialog.constants import ICON_NAMES
+import never.objects as canvas_objects  # avoid circular import
+from never.generic_widgets import ScrollableFrame
+from never.utils import get_image_path
+from never.utils import disable_children
+from never.constants import ICON_NAMES
 
 
 IMG_FORMATS = ['.gif', '.jpg', '.jpeg', '.png']

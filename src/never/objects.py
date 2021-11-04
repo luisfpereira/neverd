@@ -7,14 +7,14 @@ import numpy as np
 from PIL import ImageTk
 from PIL import Image
 
-from tk_2d_dialog.popups import CanvasPopupMenu
-from tk_2d_dialog.popups import ObjectPopupMenu
-from tk_2d_dialog.popups import LinePopupMenu
-from tk_2d_dialog.popups import SliderPopupMenu
-from tk_2d_dialog.popups import ImagePopupMenu
-from tk_2d_dialog.utils import flatten_list
-from tk_2d_dialog.utils import get_bound_position
-from tk_2d_dialog.utils import MAP_POS_TO_CURSOR_SYMBOL
+from never.popups import CanvasPopupMenu
+from never.popups import ObjectPopupMenu
+from never.popups import LinePopupMenu
+from never.popups import SliderPopupMenu
+from never.popups import ImagePopupMenu
+from never.utils import flatten_list
+from never.utils import get_bound_position
+from never.utils import MAP_POS_TO_CURSOR_SYMBOL
 
 
 ATOL = 1e-6
