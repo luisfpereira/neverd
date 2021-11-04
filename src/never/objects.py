@@ -49,9 +49,17 @@ class GeometricCanvas(tk.Canvas):
     def width(self):
         return int(self.winfo_reqwidth()) - self._border_width
 
+    @width.setter
+    def width(self, value):
+        self.config(width=value)
+
     @property
     def height(self):
         return int(self.winfo_reqheight()) - self._border_width
+
+    @height.setter
+    def height(self, value):
+        self.config(height=value)
 
     def has_image(self):
         return self.image is not None
@@ -134,14 +142,14 @@ class GeometricCanvas(tk.Canvas):
             self.image.hide()
 
     def delete_image(self):
-        self.image.destroy()
-        self.image = None
+        if self.image is not None:
+            self.image.destroy()
+            self.image = None
 
     def is_hidden(self, obj_id):
         return self.itemcget(obj_id, 'state') == 'hidden'
 
     def as_dict(self):
-        # TODO: retrieve size
         output_dict = {}
 
         output_dict['metadata'] = {'width': self.width,
@@ -162,6 +170,16 @@ class GeometricCanvas(tk.Canvas):
     def dump(self, filename):
         with open(filename, 'w') as file:
             json.dump(self.as_dict(), file, indent=2)
+
+    def clear(self):
+        for obj_id in reversed(list(self.objects.keys())):
+            self.delete_object(obj_id)
+
+        self.delete_image()
+
+        if self.calibration_rectangle is not None:
+            self.calibration_rectangle.destroy()
+            self.calibration_rectangle = None
 
 
 class _BaseCanvasObject(metaclass=ABCMeta):

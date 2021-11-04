@@ -31,6 +31,19 @@ def get_root(widget):
         parent = parent.master
 
 
+def get_menubar(root):
+    if root['menu']:
+        for child in root.winfo_children():
+            if isinstance(child, tk.Menu):
+                menubar = child
+                break
+    else:
+        menubar = tk.Menu()
+        root.configure(menu=menubar)
+
+    return menubar
+
+
 def disable_children(parent):
     for child in parent.winfo_children():
         try:
