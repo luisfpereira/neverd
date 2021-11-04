@@ -830,9 +830,10 @@ class Point(_BaseCanvasObject):
 
 class _DependentPoint(Point, metaclass=ABCMeta):
 
-    def __init__(self, master, *args, **kwargs):
-        # TODO: make explicit
-        super().__init__(*args, **kwargs)
+    def __init__(self, master, name, coords, color='blue', size=5, text='',
+                 allow_translate=True):
+        super().__init__(name, coords, color=color, size=size, text=text,
+                         allow_translate=allow_translate)
         self.master = master
 
     @property
