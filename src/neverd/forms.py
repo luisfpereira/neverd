@@ -18,7 +18,6 @@ from neverd.utils import disable_children
 from neverd.constants import ICON_NAMES
 
 
-# TODO: calibration defaults fit window
 # TODO: check translate in sliders -> should not change if line cannot
 
 IMG_FORMATS = ['.gif', '.jpg', '.jpeg', '.png']
@@ -426,7 +425,7 @@ class CalibrationRectangleForm(_BaseForm):
         coords_frame.set([[-10., 10.], [10., -10.]])
 
         canvas_coords_frame = self._get_canvas_coords_frame()
-        width, height = float(self.canvas['width']), float(self.canvas['height'])
+        width, height = float(self.canvas.width), float(self.canvas.height)
         canvas_coords_frame.set([[20., 20.], [width - 20, height - 20]])
 
     def _add_object(self, data):
