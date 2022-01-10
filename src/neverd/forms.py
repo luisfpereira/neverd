@@ -18,6 +18,9 @@ from neverd.utils import disable_children
 from neverd.constants import ICON_NAMES
 
 
+# TODO: calibration defaults fit window
+# TODO: check translate in sliders -> should not change if line cannot
+
 IMG_FORMATS = ['.gif', '.jpg', '.jpeg', '.png']
 
 
@@ -211,7 +214,8 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
     def set(self, values):
         values = self._preprocess_set_data(values)
         for key, value in values.items():
-            self.info_container[key].set(value)
+            if key in self.info_container:
+                self.info_container[key].set(value)
 
     def on_add(self, *args):
         if not self._validate():
@@ -370,11 +374,8 @@ class SliderForm(_BaseForm):
         return data
 
     def _preprocess_set_data(self, values):
-        del values['coords']
-
+        values = super()._preprocess_set_data(values)
         values['v'] = [[v] for v in [values['v_init'], values['v_end']]]
-        del values['v_init']
-        del values['v_end']
 
         return values
 
@@ -473,7 +474,6 @@ class CanvasImageForm(_BaseForm):
 
     def _preprocess_set_data(self, values):
         values['width'], values['height'] = values['size']
-        del values['size']
 
         return values
 
