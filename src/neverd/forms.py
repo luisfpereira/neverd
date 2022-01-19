@@ -305,13 +305,20 @@ class LineForm(_BaseForm):
 
     def _set_default_coords(self):
         coords_frame = self._get_coords_frame()
+        coords = self._get_linear_spaced_line_pts(2)
+        coords_frame.set(coords)
 
+    def _get_linear_spaced_line_pts(self, n_points):
         (x1, x2), (y1, y2) = _get_canvas_coords_lims(self.canvas)
-
-        x_left = x1 + abs(x2 - x1) * .4
-        x_right = x1 + abs(x2 - x1) * .6
         y = y1 + (y2 - y1) * 0.1
-        coords_frame.set([[x_left, y], [x_right, y]])
+
+        coords = []
+        delta = 0.2 / n_points
+        for i in range(n_points):
+            x = x1 + abs(x2 - x1) * (0.4 + delta * i)
+            coords.append([x, y])
+
+        return coords
 
     def _update_coords_frame(self, *args):
         n_points_frame = self._get_n_points_frame()
@@ -320,7 +327,9 @@ class LineForm(_BaseForm):
         coords_frame = self._get_coords_frame()
         n_frames = len(coords_frame.frames)
         if n_frames < n_points:
-            coords_frame.add_entry([0., 0.])
+            coords = self._get_linear_spaced_line_pts(n_points)
+            coords_frame.set(coords)
+
         elif n_frames > n_points:
             coords_frame.remove_last_entry()
 
@@ -698,8 +707,22 @@ class MultipleCoordsFrame(_LabeledFrame):
         del self.frames[-1]
 
     def set(self, values):
-        for values_ in values:
-            self.add_entry(values_)
+        n_frames = len(self.frames)
+        n_values = len(values)
+
+        # update existing entries
+        for frame, coords in zip(self.frames, values):
+            frame.set(coords)
+
+        # delete frames in excess
+        if n_frames > n_values:
+            for i in range(n_frames - n_values):
+                self.remove_last_entry()
+
+        # add missing entries
+        elif n_values > n_frames:
+            for coords in values[n_frames:]:
+                self.add_entry(coords)
 
     def get(self):
         return [frame.get() for frame in self.frames]
