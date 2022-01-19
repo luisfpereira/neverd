@@ -111,14 +111,14 @@ class _BaseForm(tk.Toplevel, metaclass=ABCMeta):
         size_frame = SpinFrame(container_frame, 'size', default=5)
         size_frame.pack(side='left', fill='both', expand=True)
 
-        small_size_frame = SpinFrame(container_frame, 'small size', default=3)
+        small_size_frame = SpinFrame(container_frame, 'small size', default=4)
         small_size_frame.pack(side='left', fill='both', expand=True)
 
         return container_frame, {'size': size_frame,
                                  'small_size': small_size_frame}
 
     def _config_width(self):
-        frame = SpinFrame(self.holder, 'width', default=1)
+        frame = SpinFrame(self.holder, 'width', default=2)
         return frame, {'width': frame}
 
     def _config_allow(self, allow_edit=True, allow_translate=True,
@@ -256,6 +256,18 @@ class PointForm(_BaseForm):
         super().__init__(canvas, frame_names, *args, obj=obj, title=title,
                          vert_space=vert_space, **kwargs)
 
+    def _set_add_default_values(self):
+        self._set_default_coords()
+
+    def _set_default_coords(self):
+        coords_frame = self.info_container['coords']
+
+        (x1, x2), (y1, y2) = _get_canvas_coords_lims(self.canvas)
+
+        x = x1 + abs(x2 - x1) * .5
+        y = y1 + (y2 - y1) * 0.1
+        coords_frame.set([x, y])
+
 
 class LineForm(_BaseForm):
 
@@ -293,7 +305,13 @@ class LineForm(_BaseForm):
 
     def _set_default_coords(self):
         coords_frame = self._get_coords_frame()
-        coords_frame.set([[0., 0.], [0., 0.]])
+
+        (x1, x2), (y1, y2) = _get_canvas_coords_lims(self.canvas)
+
+        x_left = x1 + abs(x2 - x1) * .4
+        x_right = x1 + abs(x2 - x1) * .6
+        y = y1 + (y2 - y1) * 0.1
+        coords_frame.set([[x_left, y], [x_right, y]])
 
     def _update_coords_frame(self, *args):
         n_points_frame = self._get_n_points_frame()
@@ -734,6 +752,17 @@ class PathEntryFrame(_LabeledFrame):
 
     def validate(self):
         return self.path_frame.validate()
+
+
+def _get_canvas_coords_lims(canvas):
+    pt_top_left, pt_bottom_right = canvas.calibration_rectangle._get_corners()
+    x1, y1 = pt_top_left.coords
+    x2, y2 = pt_bottom_right.coords
+
+    x1, x2 = min(x1, x2), max(x1, x2)
+    y1, y2 = min(y1, y2), max(y1, y2)
+
+    return (x1, x2), (y1, y2)
 
 
 OBJ2FORM = {
