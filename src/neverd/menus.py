@@ -4,22 +4,66 @@ import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
 
-from neverd.utils import get_menubar
 from neverd.helpers import update_canvas_from_dict
+from neverd.utils import get_root
+
+
+class DefaultMenubar:
+    # TODO: overlap with opentea
+
+    def __init__(self, canvas):
+        self.canvas = canvas
+        self.menus = []
+
+        self._root = None
+
+        self._add_menus()
+
+    @property
+    def menubar(self):
+        if len(self.menus) == 0:
+            return None
+        return self.menus[-1].master
+
+    @property
+    def root(self):
+        if self._root is None:
+            self._root = get_root(self.canvas.master)
+
+        return self._root
+
+    def _add_menus(self):
+        self.add_menu(FileMenu(self.canvas))
+
+    def add_menu(self, menu):
+        self.menus.append(menu)
+
+    def activate(self):
+        self.root.configure(menu=self.menubar)
 
 
 class FileMenu(tk.Menu):
 
-    def __init__(self, root, canvas, filename=None, label='File', **kwargs):
-        menubar = get_menubar(root)
+    def __init__(self, canvas, filename=None, label='File',
+                 menubar=None, **kwargs):
+        if menubar is None:
+            menubar = tk.Menu()
+
         self.filename = filename
         self.canvas = canvas
-        self.root = root
+        self._root = None
 
         super().__init__(menubar, tearoff=0, **kwargs)
         menubar.add_cascade(label=label, menu=self)
 
         self._add_items()
+
+    @property
+    def root(self):
+        if self._root is None:
+            self._root = get_root(self.canvas.master)
+
+        return self._root
 
     def _add_items(self):
         self.add_command(label='Save', command=self.on_save)
